@@ -265,6 +265,47 @@ python search_mods.py "кашлянула" --dll     # + в .dll (медленн
 
 Меняешь `config.json` → следующий запуск подхватит.
 
+### ➕ Любая внешняя LLM (OpenAI-совместимый API)
+
+Конвейер ходит по **одной точке**: `POST <base_url>/chat/completions` в формате
+OpenAI. Поэтому подойдёт **любой сервер с OpenAI-совместимым API** — локальный
+(ollama, llama.cpp /server, vLLM, LM Studio, text-generation-webui, ollama-weldbook)
+или облачный (OpenAI, OpenRouter, Groq, Mistral, Together, DeepSeek и т.п.).
+
+Нужно поменять в `config.json` только блок `llm` (+ при желании модель из `translate`):
+```json
+"llm": {
+  "base_url": "https://api.openai.com/v1",          // ← любой OpenAI-совместимый
+  "model":    "gpt-4o-mini",                         // ← нужная тебе модель
+  "api_key":  "sk-...",                              // ← ключ (null если локальный, без ключа)
+  "http_timeout_s": 600
+}
+```
+`api_key` — опционален: если `null`, заголовок `Authorization: Bearer …` не ставится
+(локальные серверы часто не требуют). Если задан — уходит как bearer-token.
+
+**Условия совместимости** (всё, что конвейер реально шлёт и читает):
+- принимает `POST /v1/chat/completions` (или путь, зашитый в `base_url`) и отдаёт
+  `choices[0].message.content` (+ `finish_reason`, `usage`);
+- поддерживает поле `temperature` и достаточный контекст (чанк до `max_batch_lines`
+  строк + словарь терминов);
+- **лишние для него** поля — отправляем всегда и часть серверов их молча игнорирует:
+  - `max_tokens` (потолок ответа),
+  - `reasoning_effort` (`"none"` → без «рассуждений»; понимают qwen3 / llama3.1+),
+  - `chat_template_kwargs.enable_thinking` (вкл/выкл «thinking» у qwen3) —
+    для чужих моделей просто игнорируется.
+
+Практика:
+- **Локальная без ключа** — `api_key: null`, `base_url = http://localhost:<port>/v1`.
+- **Облачная** — вставь реальный `base_url` + `model` + `api_key`; модель обязана
+  «держать» ~200k токенов контекста и отдавать JSON-массив переводов без «рассуждений».
+- Если сервер ругается на неизвестные поля (строгие OpenAI-клоны) — просто убедись,
+  что включён режим, игнорирующий лишние (`reasoning_effort`, `chat_template_kwargs`),
+  либо временно закомментируй соответствующие ключи в `config.json` (см. блок `translate`).
+
+Программа не привязана к конкретному вендору: подставляй endpoint — и конвейер,
+prefilter (reuse без LLM) и словарь работают как есть.
+
 ---
 
 ## 📖 Словарь терминов — `dict.json`
