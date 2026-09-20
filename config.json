@@ -18,7 +18,7 @@
     "context_window": 200000,
     "max_batch_lines": 180,
     "max_output_tokens": 120000,
-    "max_tokens": 5000,
+    "max_tokens": 200000,
     "min_chunk": 4,
     "http_retries": 3,
     "force_retranslate": false,
@@ -26,7 +26,7 @@
     "log_max_lines": 100,
     "reasoning_effort": "none",
     "enable_thinking": false,
-    "temperature": 0.8
+    "temperature": 0.7
   },
   "dict": "dict.json",
   "exclude_file": "exclude.txt"
