@@ -114,7 +114,7 @@ static int DoApply(string modPath, string mappingJson, string outMod)
             continue;
         }
         var rest = e.key.Substring("record".Length);
-        var us = rest.IndexOf('_');
+        var us = rest.LastIndexOf('_');
         if (us <= 0) continue;
         var idPart = rest.Substring(0, us);
         var field = rest.Substring(us + 1);
