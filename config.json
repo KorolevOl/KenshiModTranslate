@@ -1,0 +1,33 @@
+{
+  "_help": "Конфиг translate_mods.py. Все пути в Windows-стиле. Динамический батч: строки в чанке подбираются под контекстное окно провайдера (context_window токенов, вход+выход), потолок — max_batch_lines строк; короткие строки дают чанк у потолка, длинные — токены ужимают. max_output_tokens: запас под RU-вывод. При сбое чанка — допериод отдельным FIX-барами.",
+  "paths": {
+    "game": "E:\\steamlibrary\\steamapps\\common\\kenshi",
+    "workshop": "E:\\steamlibrary\\steamapps\\workshop\\content\\233860",
+    "dotnet": "H:\\dotnet9\\dotnet.exe",
+    "modtranslate_cli": "H:\\KenshiModTranslate\\bin\\Release\\net9.0-windows\\kenshi-modtranslate.dll",
+    "state": "H:\\KenshiModTranslate\\state",
+    "mods_dir": "E:\\steamlibrary\\steamapps\\common\\kenshi\\mods"
+  },
+  "llm": {
+    "base_url": "http://localhost:11234/v1",
+    "model": "qwen3.8:27b",
+    "api_key": null,
+    "http_timeout_s": 600
+  },
+  "translate": {
+    "context_window": 200000,
+    "max_batch_lines": 180,
+    "max_output_tokens": 120000,
+    "max_tokens": 5000,
+    "min_chunk": 4,
+    "http_retries": 3,
+    "force_retranslate": false,
+    "log_dir": "logs",
+    "log_max_lines": 100,
+    "reasoning_effort": "none",
+    "enable_thinking": false,
+    "temperature": 0.8
+  },
+  "dict": "dict.json",
+  "exclude_file": "exclude.txt"
+} 

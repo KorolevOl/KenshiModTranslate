@@ -1,0 +1,5 @@
+# Пример списка модов (по одному на строку: имя, id Workshop или путь к .mod)
+# '#' и пустые строки игнорируются
+Pocket Change
+1140742609
+# E:\steamlibrary\steamapps\workshop\content\233860\1321702013\Moisture Farming.mod

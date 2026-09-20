@@ -1,0 +1,24 @@
+# .NET build output
+bin/
+obj/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime / кеш
+state/
+logs/
+*.log
+
+# OS / IDE
+Thumbs.db
+Desktop.ini
+.vs/
+.idea/
+.vscode/
+*.swp
+
+# LibreOffice / Excel lock files (иные каталоги)
+.~lock*
