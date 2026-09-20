@@ -52,11 +52,13 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CFG = json.load(open(os.path.join(HERE, "config.json"), encoding="utf-8"))
+import kmt_paths
+_resolve = kmt_paths.resolve
 P = CFG["paths"]
-WORKSHOP = P["workshop"]
-GAME = P["game"]
-STATE = P["state"]
-MODS_DIR = P.get("mods_dir") or os.path.join(GAME, "mods")
+WORKSHOP = _resolve(P["workshop"])
+GAME = _resolve(P["game"])
+STATE = _resolve(P["state"])
+MODS_DIR = (P.get("mods_dir") and _resolve(P["mods_dir"])) or os.path.join(GAME, "mods")
 
 from validate_translation import (
     words, has_cyrillic, norm, classify_row, already_russian, is_identifier,

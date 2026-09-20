@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-rebuild_mods.py — пересборка пересобранных .mod из готовых кешей (state/).
+rebuild_mods.py — пересборка .mod из готовых кешей (state/).
+Пути читает из config.json (общий резолвер kmt_paths): работает из любого CWD.
 Не нужен LLM: берутся RU-переводы из state/<hash>_mapping.json и применяются
 к ТЕКУЩЕМУ .mod (через DoApply → SaveModFile).
 
@@ -13,10 +14,16 @@ rebuild_mods.py — пересборка пересобранных .mod из г
 """
 import os, sys, json, re, subprocess
 
-WORKSHOP = r"E:\steamlibrary\steamapps\workshop\content\233860"
-DOTNET   = r"H:\dotnet9\dotnet.exe"
-CLI      = r"H:\KenshiModTranslate\bin\Release\net9.0-windows\kenshi-modtranslate.dll"
-STATE    = r"H:\KenshiModTranslate\state"
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import kmt_paths
+_resolve = kmt_paths.resolve
+CFG = json.load(open(os.path.join(HERE, "config.json"), encoding="utf-8"))
+P = CFG["paths"]
+WORKSHOP = _resolve(P["workshop"])
+DOTNET   = _resolve(P["dotnet"])
+CLI      = _resolve(P["modtranslate_cli"])
+STATE    = _resolve(P["state"])
 
 def find_hash_for_mod(d):
     """Найти hash из .orig_<hash>.backup в папке мода."""

@@ -85,24 +85,26 @@ curl http://localhost:11234/v1/models
 Должен вернуть JSON со списком моделей. Если сервер под другим именем/портом — поправь `base_url`.
 
 #### 2.5. Пути в `config.json`
-Указать **свои** реальные пути:
+Правило: **абсолютные** — только для каталогов **вне** папки проекта (game, workshop на `E:`); **относительные к папке проекта** — для всего, что рядом (`state`, `dotnet`, `modtranslate_cli`).
 ```json
 "paths": {
   "game":     "E:\\steamlibrary\\steamapps\\common\\kenshi",
   "workshop": "E:\\steamlibrary\\steamapps\\workshop\\content\\233860",
-  "dotnet":   "C:\\Program Files\\dotnet\\dotnet.exe",   ← ТВОЙ dotnet
-  "modtranslate_cli": "C:\\...\\KenshiModTranslate\\bin\\Release\\net9.0-windows\\kenshi-modtranslate.dll",  ← ТВОЙ DLL
-  "state":    "C:\\...\\KenshiModTranslate\\state",
-  "mods_dir": "E:\\steamlibrary\\steamapps\\common\\kenshi\\mods"
+  "dotnet":   "../dotnet9/dotnet.exe",
+  "modtranslate_cli": "bin/Release/net9.0-windows/kenshi-modtranslate.dll",
+  "state":    "state"
 }
 ```
-| Поле | Что |
+| Поле | Что (пример значения в этом репо) |
 |---|---|
-| `game` | Каталог игры ( Kenshi, `kenshi.exe` внутри ) |
-| `workshop` | Папка Steam Workshop — `content\233860` ( appId Kenshi = 233860 ) |
-| `dotnet` | Полный путь к `dotnet.exe` (или `dotnet` в PATH) |
-| `modtranslate_cli` | Полный путь к `kenshi-modtranslate.dll` (после `dotnet build`) |
-| `state` | Где кеш переводов — можно оставить по умолчанию в папке проекта |
+| `game` | Каталог игры ( Kenshi, `kenshi.exe` внутри ) — абсолютный, на твоём диске |
+| `workshop` | Папка Steam Workshop — `content\233860` ( appId Kenshi = 233860 ) — абсолютный |
+| `dotnet` | `../dotnet9/dotnet.exe` **относительно папки проекта** (или просто абсолютный, если dotnet где-то ещё) |
+| `modtranslate_cli` | `bin/Release/net9.0-windows/kenshi-modtranslate.dll` (относительно папки проекта, после `dotnet build`) |
+| `state` | `state` — кеш переводов, **по умолчанию внутри папки проекта** |
+
+> Относительные пути всегда резолвятся **относительно папки проекта**, где лежит
+> `config.json` — работает из любого CWD и из любого `.bat`.
 
 #### 2.6. (Опционально) Словарь / Чёрный список / Промт
 Файлы уже есть с разумными дефолтами, можно править:

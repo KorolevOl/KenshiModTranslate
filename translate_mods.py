@@ -56,14 +56,21 @@ def _needs_translation(en):
     return lvl in BAD_FIX_LEVELS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+# Единый резолвер путей: относительные → к папке проекта, не к CWD.
+# kmt_paths.py — общий хелпер, чтобы все скрипты (translate, verify, rebuild, search)
+# согласованным образом резолвили пути из config.json.
+import kmt_paths
+_resolve = kmt_paths.resolve
+
 CFG = json.load(open(os.path.join(HERE, "config.json"), encoding="utf-8"))
 P, L, T = CFG["paths"], CFG["llm"], CFG["translate"]
-GAME     = P["game"]
-WORKSHOP = P["workshop"]
-STATE    = P["state"]
-MODS_DIR = P.get("mods_dir") or os.path.join(GAME, "mods")
-DOTTNET  = P["dotnet"]
-CLI_DOTS = P["modtranslate_cli"]
+GAME     = _resolve(P["game"])                # обычно абсолютный (E:)
+WORKSHOP = _resolve(P["workshop"])            # обычно абсолютный (E:)
+STATE    = _resolve(P["state"])               # 'state' → <HERE>/state
+MODS_DIR = (P.get("mods_dir") and _resolve(P["mods_dir"])) or os.path.join(GAME, "mods")
+DOTTNET  = _resolve(P["dotnet"])              # 'dotnet' или '../dotnet9/dotnet.exe'
+CLI_DOTS = _resolve(P["modtranslate_cli"])    # 'bin/Release/...dll'
 
 # ---------------- dynamic RU-LOCALES HINTS (po_files.json) ----------------
 import po_hints
