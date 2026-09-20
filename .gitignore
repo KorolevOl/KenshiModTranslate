@@ -1,5 +1,15 @@
-# .NET build output
-bin/
+# .NET build output — НО держим в репо собранную CLI (kenshi-modtranslate),
+# чтобы новичку не требовалось .NET SDK и соседний KenshiTranslator.
+# Игнорируем ВСЁ в bin/, кроме каталожной цепочки и 4 нужных артефактов.
+bin/*
+!bin/Release/
+bin/Release/*
+!bin/Release/net9.0-windows/
+bin/Release/net9.0-windows/*
+!bin/Release/net9.0-windows/kenshi-modtranslate.dll
+!bin/Release/net9.0-windows/KenshiCore.dll
+!bin/Release/net9.0-windows/kenshi-modtranslate.runtimeconfig.json
+!bin/Release/net9.0-windows/kenshi-modtranslate.deps.json
 obj/
 
 # Python

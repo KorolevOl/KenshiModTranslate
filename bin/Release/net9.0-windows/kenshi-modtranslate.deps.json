@@ -1,0 +1,57 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v9.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v9.0": {
+      "kenshi-modtranslate/1.0.0": {
+        "dependencies": {
+          "KenshiCore": "1.0.0"
+        },
+        "runtime": {
+          "kenshi-modtranslate.dll": {}
+        }
+      },
+      "fernandreu.ScintillaNET/4.2.0": {
+        "runtime": {
+          "lib/net6.0-windows7.0/ScintillaNET.dll": {
+            "assemblyVersion": "4.2.0.0",
+            "fileVersion": "4.2.0.0"
+          }
+        }
+      },
+      "KenshiCore/1.0.0": {
+        "dependencies": {
+          "fernandreu.ScintillaNET": "4.2.0"
+        },
+        "runtime": {
+          "KenshiCore.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "kenshi-modtranslate/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "fernandreu.ScintillaNET/4.2.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-68J5Asevo2rX6ImPgajNSh1ZXGO6DKV56eyOXZsdr6uWmt6RZKCGpk29Cd6SPjk0rqzes4kJxWVegZ0qi/ZQDw==",
+      "path": "fernandreu.scintillanet/4.2.0",
+      "hashPath": "fernandreu.scintillanet.4.2.0.nupkg.sha512"
+    },
+    "KenshiCore/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
