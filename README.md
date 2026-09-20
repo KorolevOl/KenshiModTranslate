@@ -44,30 +44,32 @@ pip install -r requirements.txt
 ```
 > Если tqdm уже есть — `pip install -r requirements.txt` скажет «already satisfied», это ок.
 
-#### 2.3. .NET SDK 9
-Установить **.NET 9 SDK** (dotnet.microsoft.com → Downloads → .NET 9 → SDK).
-Проверить:
+#### 2.3. .NET 9 Desktop Runtime
+**DLL уже в этом репо** — `bin\Release\net9.0-windows\kenshi-modtranslate.dll` закоммичен
+вместе с зависимостями ( `KenshiCore.dll`, `*.runtimeconfig.json`, `*.deps.json` ).
+Вам нужен только **.NET 9 Desktop Runtime** на машине (не SDK — только для запуска):
 ```
-dotnet --version          # 9.0.xxx
+# Скачать: https://dotnet.microsoft.com/download/dotnet/9.0  →  .NET Desktop Runtime 9.0.x  →  x64
+# Установить. После установки:
+dotnet --list-runtimes    # содержит Microsoft.WindowsDesktop.App 9.0.x
 ```
-Для сборки C#-CLI нужен **родственный проект `KenshiTranslator`** (csproj ссылается на
-`..\KenshiTranslator\KenshiCore`). Структура на диске:
+> `dotnet` = команда-запускатель рантайма, не отдельное приложение — ставится вместе с `Desktop Runtime` в `%ProgramFiles%\dotnet`.
+> В `config.json` укажите полный путь к нему, если `dotnet` не в `PATH`: `"dotnet": "C:\\Program Files\\dotnet\\dotnet.exe"`.
+
+**Если хотите менять C#-код** (добавить фичи, патчить) — тогда нужен **.NET 9 SDK** + соседний
+репо `KenshiTranslator`:
 ```
 папка\\
-├─ KenshiModTranslate\\      ← этот репо
-│   └─ kenshi-modtranslate.csproj  (ProjectReference: ..\KenshiTranslator\KenshiCore)
+├─ KenshiModTranslate\\      ← этот репо (ksm csproj ссылается на ..\KenshiTranslator\KenshiCore)
 └─ KenshiTranslator\\
     └─ KenshiCore\\KenshiCore.csproj
 ```
-Если `KenshiTranslator` ещё нет — скачать (`git clone` того, что у вас в работе, или взять
-у того, у кого уже собрана папка), положить **рядом** с `KenshiModTranslate`.
-Собрать:
 ```
 cd KenshiModTranslate
 dotnet build -c Release
-# => bin\Release\net9.0-windows\kenshi-modtranslate.dll
+# => bin\Release\net9.0-windows\kenshi-modtranslate.dll (новый)
+git add bin/Release/net9.0-windows/kenshi-modtranslate.dll && git commit
 ```
-> Если `bin\Release\net9.0-windows\kenshi-modtranslate.dll` уже есть — пропустить.
 
 #### 2.4. LLM-сервер (локальный)
 В `config.json`:
@@ -128,7 +130,8 @@ translate_mods.bat "Pocket Change 2.0"
 |---|---|
 | `python not found in PATH` | Python не добавлен в PATH — переустановить с галкой |
 | `dotnet: command not found` | .NET не в PATH — добавить `C:\Program Files\dotnet` в PATH |
-| `dotnet CLI failed: The application to execute does not exist` | `paths.modtranslate_cli` в `config.json` неверен или DLL не собран – `dotnet build -c Release` |
+| `dotnet CLI failed: The application to execute does not exist` | `paths.modtranslate_cli` в `config.json` неверен — проверьте, что `bin\Release\net9.0-windows\kenshi-modtranslate.dll` существует (в репо) |
+| `You must install or update .NET` | Не установлен **.NET Desktop Runtime 9** — ставится с dotnet.microsoft.com |
 | `KenshiCore.csproj` не найден при сборке | Нет соседнего `..\KenshiTranslator\KenshiCore\KenshiCore.csproj` – скачать рядом |
 | `Connection refused: localhost:11234` | LLM-сервер не запущен – поднять ollama/ollama-weldbook |
 | `404 /v1/models` | `base_url` в `config.json` неверен |
