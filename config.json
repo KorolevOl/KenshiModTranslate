@@ -26,7 +26,9 @@
     "log_max_lines": 50,
     "reasoning_effort": "none",
     "enable_thinking": false,
-    "temperature": 0.8
+    "temperature": 0.7,
+    "po_hints": true,
+    "po_hints_max": 30
   },
   "dict": "dict.json",
   "exclude_file": "exclude.txt"

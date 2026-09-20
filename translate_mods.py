@@ -63,6 +63,16 @@ STATE    = P["state"]
 MODS_DIR = P.get("mods_dir") or os.path.join(GAME, "mods")
 DOTTNET  = P["dotnet"]
 CLI_DOTS = P["modtranslate_cli"]
+
+# ---------------- dynamic RU-LOCALES HINTS (po_files.json) ----------------
+import po_hints
+_PO_LOCALES_DIR = P.get("locales_dir") or os.path.join(GAME, "locale", "ru_RU")
+_PO_HINTS_MAX = int(T.get("po_hints_max", 30))
+_PO_HINTS_ENABLED = bool(T.get("po_hints", True))
+po_hints.configure([
+    os.path.join(_PO_LOCALES_DIR, "gamedata.po"),
+    os.path.join(_PO_LOCALES_DIR, "LC_MESSAGES", "main.po"),
+])
 BATCH      = int(T.get("max_batch_lines", 500))
 MIN_CHUNK  = max(1, int(T.get("min_chunk", 4)))
 MAX_TOKENS = int(T["max_tokens"])
@@ -362,6 +372,20 @@ def llm_call(strings):
     def _one_attempt(effort):
         user = USER_PROMPT_TMPL.replace("{{COUNT}}", str(len(strings)))
         system = SYS_PROMPT.replace("{{DICT}}", dict_block_for_prompt())
+        # Динамические подсказки из RU-локализации игры под ЭТОТ батч
+        # (только то, что не покрывается dict.json + только релевантное к строкам батча —
+        #  не раздуваем промпт статично)
+        if _PO_HINTS_ENABLED:
+            try:
+                hbk = po_hints.hints_block(
+                    strings,
+                    dict_keys=set(DICT["exact"].keys()) | {k for k in DICT["words"].keys()},
+                    max_hints=_PO_HINTS_MAX,
+                )
+                if hbk:
+                    system = system + "\n\n" + hbk
+            except Exception as e:
+                log(f"[warn] po_hints: {e}")
         body = {
             "model": LLM_MODEL,
             "max_tokens": MAX_TOKENS,
@@ -986,6 +1010,7 @@ def main():
         f"reasoning_effort={REASONING_EFFORT}  temperature={TEMPERATURE}  "
         f"enable_thinking={'ON' if not THINKING_OFF else 'OFF'}")
     log(f"dict={ ('+' + str(len(DICT['exact'])) + ' exact / +' + str(len(DICT['words'])) + ' terms (' + DICT_PATH + ')') if (DICT['exact'] or DICT['words']) else 'off'}")
+    log(f"po_hints={'ON' if _PO_HINTS_ENABLED else 'OFF'} (до {_PO_HINTS_MAX} редких пар из {GAME}/locale/ru_RU под текущий чанк)")
     log(f"prompt: {PROMPT_FILE}")
     log(f"state: {STATE}\n")
 
