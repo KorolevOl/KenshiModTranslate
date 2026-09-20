@@ -61,7 +61,6 @@ P, L, T = CFG["paths"], CFG["llm"], CFG["translate"]
 GAME     = P["game"]
 WORKSHOP = P["workshop"]
 STATE    = P["state"]
-prefilter.set_state_dir(STATE)      # кеш уже переведённых модев (СЛОЙ 2 reuse)
 MODS_DIR = P.get("mods_dir") or os.path.join(GAME, "mods")
 DOTTNET  = P["dotnet"]
 CLI_DOTS = P["modtranslate_cli"]
@@ -133,6 +132,19 @@ if os.path.isfile(DICT_PATH):
     d = json.load(open(DICT_PATH, encoding="utf-8-sig"))
     DICT["exact"] = {k.lower().strip(): v for k, v in (d.get("exact") or {}).items()}
     DICT["words"] = {k.lower().strip(): v for k, v in (d.get("words") or {}).items()}
+
+# ---- Pre-LLM filter (СЛОЙ 1 regex + СЛОЙ 2 reuse) ----
+# СЛОЙ 2: пул готовых EN->RU переводов — dict.json exact (канон) > .po игры >
+# кеш ранее переведённых модев (state\). Строится один раз при старте.
+# Отключить: config.json → translate "prefilter": false (обойдём оба слоя).
+PRE_FILTER_ENABLED = bool(T.get("prefilter", True))
+_PRE_PO_PATHS = [
+    os.path.join(_PO_LOCALES_DIR, "gamedata.po"),
+    os.path.join(_PO_LOCALES_DIR, "LC_MESSAGES", "main.po"),
+]
+if PRE_FILTER_ENABLED:
+    prefilter.configure(DICT_PATH, _PRE_PO_PATHS, STATE)
+
 
 # ---------- exclusion patterns ----------
 EXCL_PATH = T.get("exclude_file", "exclude.txt")
@@ -629,31 +641,32 @@ def translate_entries(entries, done_map, name, ctx):
     #            ранее переведённых модов. Подставляем, НЕ спрашиваем LLM
     #            (экономим токены+время, держим консистентное написание).
     # Эхо (RU==EN) и грязный RU (кириллица в /.../) — НЕ считаем готовым.
-    keep, n_passthrough, n_reused = [], 0, 0
-    for e in todo:
-        en = e.get("original") or ""
-        if prefilter.nothing_to_translate(en):
-            n_passthrough += 1
-            done_map[str(e["i"])] = str(en)   # pass: оставляем оригинал
-            continue
-        ru, src = prefilter.reuse_lookup(en)
-        if ru:
-            n_reused += 1
-            # apply_dict: если en в exact — берём канон RU; иначе подставляем как есть
-            done_map[str(e["i"])] = apply_dict(en, ru)
-            continue
-        keep.append(e)
-    todo = keep
-    if n_passthrough:
-        log(f"  [pre-LLM: нечего переводить] {n_passthrough} строк (кириллица/знаки/CJK) — passthrough, не спрашиваю LLM")
-    if n_reused:
-        log(f"  [pre-LLM: уже переведено] {n_reused} строк (dict/game.po/ранее перевед.моды) — беру готовый RU, не спрашиваю LLM")
-    if n_passthrough or n_reused:
-        save_map()
-    skipped = len(entries) - len(done_map) - len(todo)
+    n_passthrough = n_reused = 0
+    if PRE_FILTER_ENABLED:
+        keep = []
+        for e in todo:
+            en = e.get("original") or ""
+            if prefilter.nothing_to_translate(en):
+                n_passthrough += 1
+                done_map[str(e["i"])] = str(en)   # pass: оставляем оригинал
+                continue
+            ru, src = prefilter.lookup(en)
+            if ru:
+                n_reused += 1
+                # apply_dict: если en в exact — берём канон RU; иначе подставляем как есть
+                done_map[str(e["i"])] = apply_dict(en, ru)
+                continue
+            keep.append(e)
+        todo = keep
+        if n_passthrough:
+            log(f"  [pre-LLM: нечего переводить] {n_passthrough} строк (кириллица/знаки/CJK) — passthrough, не спрашиваю LLM")
+        if n_reused:
+            log(f"  [pre-LLM: уже переведено] {n_reused} строк (dict/game.po/ранее перевед.моды) — беру готовый RU, не спрашиваю LLM")
+        if n_passthrough or n_reused:
+            save_map()
     total_rows = len(todo)
     if total_rows == 0:
-        log(f"  все строки обработаны без LLM: {n_passthrough} passthrough + {n_reused} reuse → перехожу к apply")
+        log(f"  все строки обработаны (passthrough {n_passthrough} + reuse {n_reused}) → перехожу к apply")
         return done_map
     ovh = sys_overhead_ch()
     # префикс-суммы: символов (для plan_chunk) и токенов (для прогрессбара)
@@ -1042,6 +1055,8 @@ def main():
         f"enable_thinking={'ON' if not THINKING_OFF else 'OFF'}")
     log(f"dict={ ('+' + str(len(DICT['exact'])) + ' exact / +' + str(len(DICT['words'])) + ' terms (' + DICT_PATH + ')') if (DICT['exact'] or DICT['words']) else 'off'}")
     log(f"po_hints={'ON' if _PO_HINTS_ENABLED else 'OFF'} (до {_PO_HINTS_MAX} редких пар из {GAME}/locale/ru_RU под текущий чанк)")
+    _ps = prefilter.pool_size()
+    log(f"prefilter={'ON' if PRE_FILTER_ENABLED else 'OFF'} (пул готовых переводов: {_ps} пар из dict.json/.по игры/кешей модев — reuse вместо LLM)")
     log(f"prompt: {PROMPT_FILE}")
     log(f"state: {STATE}\n")
 

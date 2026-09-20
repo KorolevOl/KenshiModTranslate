@@ -1,29 +1,37 @@
-"""prefilter.py — пред-LLM фильтр: не слать в LLM то, что можно не слать.
+"""prefilter.py — pre-LLM filter: don't ship to the LLM what we don't need to.
 
-Два слоя (применяются до каждого батча, идущего в LLM):
+Applies to a chunk of entries BEFORE it goes to the LLM (both in the main
+translation pass and in the fix/dopereiod pass of translate_mods.py):
 
-  СЛОЙ 1 — «нечего переводить» (regex, как просил пользователь).
-    Строка, из которой (ПОСЛЕ вычистки BBCode `[...]` и движковых слэш-тегов
-    `/AAA/`) нельзя извлечь ХОТЯ БЫ ОДНУ латинскую букву, — это либо уже
-    русский текст, либо чистые знаки/числа/CJK. В ней нечего «давать» LLM.
-    Решение: passthrough (в .mod остаётся оригинал), строка НЕ входит в
-    отправляемый в LLM батч. Ядро: re.search('[A-Za-z]', вычищенная строка).
-    Важно: латынь ВНУТРИ тега/BBCode не считается контентом (`[h1]Привет[/h1]`
-    — `h1` это тег, а `Привет` — уже русский, переводить нечего).
+  LAYER 1 — nothing_to_translate(en)
+      The string has NOTHING to translate. A string "has translatable
+      content" only if, after stripping its engine tags ([..] BBCode and
+      /TAG/ slash-tags), it still contains at least one Latin letter (a real
+      English word). Pure Cyrillic (already Russian), pure punctuation /
+      symbols, pure numbers, or empty → nothing to translate → do NOT ask the
+      LLM. Passthrough: the original stays as the "translation" (the auditors
+      already accept such rows as ok / already_ru — they are genuinely not
+      translatable).
 
-  СЛОЙ 2 — «уже переведено» (переиспользование готового RU, без LLM).
-    Если EN-строка точно совпадает (без учёта регистра) с готовым RU из:
-      (a) dict.json `exact`   — канон (build-меню, имён/фракций);
-      (b) .po игры            — официальная RU-локализация кенши;
-      (c) кеш ранее переведённых модов (state\\*_entries.json + _mapping.json);
-    — подставляем тот RU и НЕ отправляем строку LLM (экономит токены/время и
-    ДЕРЖИТ КОНСИСТЕНТНОЕ написание). Приоритет: dict.json > .по игры > моды.
-    Эхо (RU==EN) и ГРЯЗНЫЙ RU (кириллица в `/.../`, BBCode-мусор) НЕ выдаём.
+  LAYER 2 — lookup(en)  (reuse an existing translation)
+      Exact (case-insensitive) match of the EN string against:
+        (a) dict.json `exact`          — canonical, highest priority;
+        (b) the game's RU locale .po   — official EN->RU pairs;
+        (c) already-translated mods    — state\\*_entries.json+_mapping.json
+            (mode of the RU values when several translations exist).
+      Returns (ru, source) or (None, None). Safety: rejects echoes (ru==en)
+      and rejects a reuse that would drop a placeholder the EN had.
 
-Почему безопасно: подставленный RU тот же, что бы дал LLM-перевод, и он всё
-равно проходит apply/audit-pipeline. Строки, которые LLM «правомерно» не
-переведёт (onomatopoeia/identifier), _needs_translation в translate_mods
-отсекает раньше — сюда они не доходят.
+Why this is safe:
+  - LAYER 1 passthrough sets ru = the original; classify_row accepts that
+    (already_ru / ok) — no ABORT, and zero tokens wasted asking the LLM about
+    a line that has no English to translate.
+  - LAYER 2 reuse only fires on EXACT string identity, so it cannot attach a
+    translation meant for a different line; placeholder containment is
+    double-checked; the result still passes the usual apply_dict / audit.
+
+Pure module: no translate_mods imports, so it is unit-testable on its own.
+translate_mods builds the pool once per process (configure) and calls lookup().
 """
 import os
 import re
@@ -31,177 +39,166 @@ import json
 import glob
 from collections import Counter
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-
-# --- regex-инструменты ---------------------------------------------------
-_HAS_LATIN  = re.compile(r"[A-Za-z]")
-_PAIR_RE    = re.compile(r'msgid\s+"([^"\n]+)"\s*\nmsgstr\s+"([^"\n]+)"')
-# BBCode/Kenshi теги [h1]...[/h1], [url=..], [b][/b] — латынь здесь = формат, не контент
-_BBCODE     = re.compile(r"\[[^\[\]]*\]")
-# движковой слэш-тег /AAA/ (латиница внутри) — подставляется движком, не контент
-_SLASH_TAG  = re.compile(r"/[A-Za-z0-9_\-]{1,40}/")
-# ГРЯЗЬ: кириллица ВНУТРИ слэш-тега «/кца1/» — артефакт, НЕ валидный RU/EN
-_DIRTY_TAG  = re.compile(r"/[^/\s]*[\u0400-\u04FF\u0400-\u044F\u0410-\u042F][^/\s]*/")
-_BBCODE_MU  = re.compile(r"\[[0-9]+\]")          # одиночные численные [1]-скобки (мусор)
-
-
-def _clean(s):
-    """Вычистить BBCode `[...]` и движковые слэш-теги `/AAA/` (конверсионные
-    вставки, не переводимый контент) — перед проверкой «есть ли латынь»."""
-    s = _BBCODE.sub(" ", s)
-    s = _SLASH_TAG.sub(" ", s)
-    return s
-
+# --- LAYER 1: is there anything to translate? -------------------------------
+# Engine/BBCode tags may carry Latin that is NOT translatable content:
+#   [h1]..[/h1], [b], [url=..], /OI/, /PROCESSORSOUND/, /HOLYGREET/ ...
+_TAG_RE = re.compile(r"\[[^\[\]]*\]|/[A-Za-z0-9_\-\.\u0400-\u04FF]{1,48}/")
 
 def nothing_to_translate(en):
-    """СЛОЙ 1. True, если ПОСЛЕ чистки тегов в строке нет ни одной латинской
-    буквы — т.е. это чистая кириллица (уже русское), знаки, числа, CJK, эмодзи.
-    Такое не нужно LLM (passthrough). Пустая строка тоже True."""
-    if not isinstance(en, str):
+    """True if the string has nothing to translate — no Latin word left after
+    stripping engine tags. Covers: already-Russian text, pure punctuation /
+    symbols, pure numbers, empty/whitespace. Such lines must not be sent to
+    the LLM (passthrough: the original is kept as the 'translation')."""
+    if not isinstance(en, str) or not en.strip():
         return True
-    if not en.strip():
-        return True
-    return not _HAS_LATIN.search(_clean(en))
+    cleaned = _TAG_RE.sub(" ", en)
+    return not re.search(r"[A-Za-z]", cleaned)
 
+# --- placeholder containment (safety for reuse) -----------------------------
+_PH_RE = re.compile(
+    r"%\d+\$[+-0#]*\d*(?:\.\d+)?[diouxXeEfFgGcs]"
+    r"|%[+-0#]*\d*(?:\.\d+)?[diouxXeEfFgGcs%]"
+    r"|\{[0-9]+\}"
+)
+def _ph(s):
+    return set(_PH_RE.findall(s or ""))
 
 def _ru_is_dirty(ru):
-    """True, если RU-значение ЗАМЯЗАНО артефактами и его нельзя использовать:
-    кириллица ВНУТРИ слэш-тега («Противни/кца1/ рабства» — 15 таких в .по игры),
-    или одиночный численный BBCode «[1]» вне контекста. Чистый RU → False."""
+    """True, если RU-значение ЗАМЯЗАНО артефактами и его нельзя использовать как
+    готовый перевод: кириллица ВНУТРИ слэш-тега («Противни/кца1/ рабства» — 15
+    таких пар в .po игры), одиночные численные BBCode-скобки вне контекста,
+    пустое. Чистый RU → False."""
     if not isinstance(ru, str) or not ru.strip():
         return True
-    if _DIRTY_TAG.search(ru):
+    # кириллица в /.../ — артефакт
+    if re.search(r"/[^/\s]*[\u0400-\u04FF][^/\s]*/", ru):
         return True
-    # [1]-скобки, если рядом нет нормального BBCode (х1/url/b/i...) — мусор
-    tags = _BBCODE.findall(ru)
-    real_tag = [t for t in tags if re.search(r"[A-Za-z]", t)]
-    if not real_tag:
-        if _BBCODE_MU.search(ru):
-            return True
+    # одиночные численные [N]-скобки, если рядом нет нормального BBCode
+    tags = re.findall(r"\[[^\[\]]*\]", ru)
+    real = [t for t in tags if re.search(r"[A-Za-z]", t)]
+    if not real and re.search(r"\[0-9+\]", ru):
+        return True
     return False
 
+# --- .po pair parsing (same shape as po_hints / extract_game_names) ----------
+_PO_PAIR = re.compile(r'msgid\s+"([^"\n]+)"\s*\nmsgstr\s+"([^"\n]+)"')
 
-def _po_paths():
-    game = os.environ.get("KENSHI_GAME", r"E:\steamlibrary\steamapps\common\kenshi")
-    d = os.path.join(game, "locale", "ru_RU")
-    return [os.path.join(d, "gamedata.po"),
-            os.path.join(d, "LC_MESSAGES", "main.po")]
-
-
-def _load_po_pairs():
-    out = []
-    for p in _po_paths():
-        if not os.path.isfile(p):
+def _pairs_from_po(paths):
+    out, seen = [], set()
+    for p in paths:
+        if not p or not os.path.isfile(p):
             continue
         try:
             txt = open(p, encoding="utf-8", errors="replace").read()
         except Exception:
             continue
-        for m in _PAIR_RE.finditer(txt):
+        for m in _PO_PAIR.finditer(txt):
             en, ru = m.group(1).strip(), m.group(2).strip()
-            if not en or en == ru:
+            if not en or not ru:
                 continue
-            if _ru_is_dirty(ru):
+            k = en.lower()
+            if k in seen:
                 continue
+            seen.add(k)
             out.append((en, ru))
     return out
 
 
-def _load_dict_exact():
-    out = []
-    for cand in (os.path.join(_HERE, "dict.json"), "dict.json"):
-        if os.path.isfile(cand):
+class ReusePool:
+    """Exact EN->RU reuse pool: build once, query many.
+
+    Priority (lowest first): mods < game .po < dict.json exact.
+    """
+    def __init__(self):
+        self._map = {}   # en_lower -> (ru, source)
+
+    @classmethod
+    def build(cls, dict_path=None, po_paths=None, state_dir=None):
+        pool = cls()
+        # (a) mods: mode of the RU values across all translated mods
+        if state_dir and os.path.isdir(state_dir):
+            counts = {}
+            for f in glob.glob(os.path.join(state_dir, "*_entries.json")):
+                mf = f[: -len("_entries.json")] + "_mapping.json"
+                if not os.path.isfile(mf):
+                    continue
+                try:
+                    entries = json.load(open(f, encoding="utf-8"))
+                    mapping = {str(x.get("i")): x.get("ru")
+                               for x in json.load(open(mf, encoding="utf-8"))}
+                except Exception:
+                    continue
+                for e in entries:
+                    en = e.get("original") or ""
+                    ru = mapping.get(str(e.get("i")))
+                    if not en or not ru:
+                        continue
+                    k = en.lower()
+                    if k == ru.lower():          # echo — not a real translation
+                        continue
+                    if _ru_is_dirty(ru):         # мусор (кирил. в /.../ и т.п.)
+                        continue
+                    counts.setdefault(k, Counter())[ru] += 1
+            for k, c in counts.items():
+                pool._map.setdefault(k, (c.most_common(1)[0][0], "mods"))
+        # (b) game .po (overrides mods on conflict)
+        for en, ru in _pairs_from_po(po_paths or []):
+            k = en.lower()
+            if k == ru.lower():
+                continue
+            if _ru_is_dirty(ru):
+                continue
+            pool._map[k] = (ru, "game.po")
+        # (c) dict.json exact — canonical, overrides all
+        if dict_path and os.path.isfile(dict_path):
             try:
-                d = json.load(open(cand, encoding="utf-8-sig"))
+                d = json.load(open(dict_path, encoding="utf-8-sig"))
                 for en, ru in (d.get("exact") or {}).items():
-                    if en and ru and not _ru_is_dirty(ru):
-                        out.append((en, ru))
-                return out
+                    k = (en or "").strip().lower()
+                    if not k or not ru or k == ru.lower():
+                        continue
+                    pool._map[k] = (ru, "dict.json")
             except Exception:
                 pass
-    return out
+        return pool
+
+    def lookup(self, en):
+        """(ru, source) for an exact (case-insens.) EN match, or (None, None).
+        Refuses: no match, echo (ru==en), or a placeholder the EN had that the
+        reused ru dropped."""
+        if not isinstance(en, str) or not en.strip():
+            return None, None
+        hit = self._map.get(en.strip().lower())
+        if not hit:
+            return None, None
+        ru, src = hit
+        if not ru or ru.lower() == en.lower():
+            return None, None
+        if _ru_is_dirty(ru):
+            return None, None
+        if not (_ph(en) <= _ph(ru)):   # reuse must not drop a placeholder
+            return None, None
+        return ru, src
+
+    def __len__(self):
+        return len(self._map)
 
 
-def _load_mod_pool(state_dir):
-    """Кеш переведённых модев: en_lower -> Counter{ru: count}.
-    Только чистые RU (не эхо, не грязные, в EN есть латынь — наш случай)."""
-    pairs = {}
-    if not state_dir or not os.path.isdir(state_dir):
-        return pairs
-    for f in glob.glob(os.path.join(state_dir, "*_entries.json")):
-        base = f[: -len("_entries.json")]
-        mf = base + "_mapping.json"
-        if not os.path.exists(mf):
-            continue
-        try:
-            entries = json.load(open(f, encoding="utf-8"))
-            mapping = json.load(open(mf, encoding="utf-8"))
-        except Exception:
-            continue
-        m = {str(x.get("i")): x.get("ru", "") for x in mapping}
-        for e in entries:
-            en = e.get("original") or ""
-            ru = m.get(str(e.get("i")), "")
-            if not en or not ru:
-                continue
-            if en.lower() == ru.lower():          # эхо
-                continue
-            if _ru_is_dirty(ru):                  # замутнённый RU
-                continue
-            if not _HAS_LATIN.search(_clean(en)):  # не наш (без латиницы)
-                continue
-            pairs.setdefault(en.lower(), Counter())[ru] += 1
-    return pairs
+_default_pool = None
 
+def configure(dict_path=None, po_paths=None, state_dir=None):
+    """Build (or rebuild) the default reuse pool. Returns the pool."""
+    global _default_pool
+    _default_pool = ReusePool.build(dict_path, po_paths, state_dir)
+    return _default_pool
 
-_POOL_CACHE = None
-_STATE_DIR = None
+def lookup(en):
+    """Reuse an existing translation if the EN string matches exactly, else
+    (None, None). Builds an empty pool on first use if not yet configured."""
+    global _default_pool
+    if _default_pool is None:
+        _default_pool = ReusePool()
+    return _default_pool.lookup(en)
 
-def set_state_dir(d):
-    """Указать каталог state\\ (кеш модев) — вызывается из translate_mods.py."""
-    global _STATE_DIR, _POOL_CACHE
-    _STATE_DIR = d
-    _POOL_CACHE = None
-
-
-def _get_state_dir():
-    return _STATE_DIR or os.path.join(_HERE, "state")
-
-
-def build_pool():
-    """Один раз: EN_lower -> (RU, source). Приоритет: dict.json > .по игры > моды."""
-    out = {}
-    for en, c in _load_mod_pool(_get_state_dir()).items():   # (c) моды
-        if c:
-            out.setdefault(en, (c.most_common(1)[0][0], "mods"))
-    for en, ru in _load_po_pairs():                            # (b) .по
-        out[en.lower()] = (ru, "game.po")
-    for en, ru in _load_dict_exact():                          # (a) dict
-        out[en.strip().lower()] = (ru, "dict.json")
-    return out
-
-
-def reuse_lookup(en):
-    """СЛОЙ 2. Готовый (RU, source) для EN-строки или (None, None).
-    Эхо (RU==EN, рег. не уч.) и грязный RU не выдаём."""
-    global _POOL_CACHE
-    if not isinstance(en, str) or not en.strip():
-        return None, None
-    key = en.strip().lower()
-    if _POOL_CACHE is None:
-        _POOL_CACHE = build_pool()
-    hit = _POOL_CACHE.get(key)
-    if not hit:
-        return None, None
-    ru, src = hit
-    if not ru or ru.lower() == en.lower() or _ru_is_dirty(ru):
-        return None, None
-    return ru, src
-
-
-def stats():
-    global _POOL_CACHE
-    if _POOL_CACHE is None:
-        return {"pool_size": 0, "by_src": {}}
-    by = Counter(src for _, src in _POOL_CACHE.values())
-    return {"pool_size": len(_POOL_CACHE), "by_src": dict(by)}
+def pool_size():
+    return 0 if _default_pool is None else len(_default_pool)
