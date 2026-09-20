@@ -232,7 +232,9 @@ def apply_dict(en_original, ru_translated):
         if not en:
             continue
         # word-boundary replacement, case-insensitive (covers "Smithing", "smithing", "Smithing,")
-        pat = re.compile(r"(?<![A-Za-z])" + re.escape(en) + r"(?![a-z])", re.IGNORECASE)
+        # (?![a-z']) — НЕ подхватить внутри слова (приставка, апостроф-множественное)
+        # (?![A-Za-z]) — не подхватить внутри бОльшего EN-токена (Fishmen ≠ Fishman)
+        pat = re.compile(r"(?<![A-Za-z])" + re.escape(en) + r"(?![A-Za-z])", re.IGNORECASE)
         out = pat.sub(ru, out)
     return out
 

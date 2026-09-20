@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """extract_game_names.py — из официального locale/ru_RU игры Kenshi
-(gamedata.po + LC_MESSAGES/main.po) выгружает EN-ключ → RU-значение:
+(gamedata.po + LC_MESSAGES/main.po) извлекает канонические RU-названия
+и СЛИВАЕТ ИХ в dict.json (источник для LLM + пост-фиксер):
 
-  1) НАЗВАНИЯ рас, фракций, банд/групп — блок ``#. Name: X`` где X == msgid
-     (тип RACE / RACE_GROUP / FACTION), из gamedata.po;
-  2) РАЗДЕЛЫ МЕНЮ ПОСТРОЙКИ/UI — строки, полностью в ВЕРХНЕМ РЕГИСТРЕ
-     (WALLS, STORAGE, POWER, FOOD, DEFENCE, FARMING, TRAINING, CRAFTING,
-     LIGHTS, TECH, BUILDINGS …) — переводчики пишут их капсом, как в меню игры,
-     поэтому это и есть канонические RU-заголовки разделов.
+  * exact: ВСЕ имена рас/фракций/групп + все разделы build-меню.
+           Строка целиком = ключу (без учёта регистра EN) → канонический RU как есть.
+           Важно: регистр RU-значения СООТВЕТСТВУЕТ меню (STORAGE→ХРАНЕНИЕ и т.д.),
+           иначе игра создаст дубль-категорию.
+  * words: только МНОГОСЛОВНЫЕ имена (>=2 слова, безопасные для подстановки).
+           Одинословные (Bull, Spiders, …) НЕ льётся — слишком общие, спалливают.
 
-Итог: game_names_ru.json (ключ = английская строка, значение = русская).
+Действующие точные-ключи dict.json, НЕ входящие в игровой набор, сохраняются.
 Запуск:  python extract_game_names.py
 """
 import json
@@ -129,18 +130,33 @@ def main():
     pairs_gd = flat_pairs(GAMEDATA_PO)
     menu = build_menu(pairs_gd, pairs_m)
 
-    data = {**names, **menu}
-    out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "game_names_ru.json")
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
+    # --- сливаем в dict.json ---
+    dict_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dict.json")
+    if os.path.isfile(dict_path):
+        cur = json.load(open(dict_path, encoding="utf-8-sig"))
+    else:
+        cur = {"_comment": "", "exact": {}, "words": {}}
+
+    exact = {k.lower().strip(): v for k, v in (cur.get("exact") or {}).items()}
+    for k, v in {**names, **menu}.items():
+        exact[k.lower().strip()] = v  # игровой набор перетирает (это и есть канон)
+
+    words = {k.lower().strip(): v
+             for k, v in names.items()
+             if len(k.split()) >= 2 or (len(k.split()) == 1 and len(k) >= 8)}
+    # ручные words (не из игрового набора) — сохраняем
+    for k, v in (cur.get("words") or {}).items():
+        words.setdefault(k.lower().strip(), v)
+
+    cur["exact"] = exact
+    cur["words"] = words
+    with open(dict_path, "w", encoding="utf-8") as f:
+        json.dump(cur, f, ensure_ascii=False, indent=2)
 
     print(f"[ok] блоков в .po: {len(rows)}")
     print(f"[ok] имена рас/фракций/групп: {sum(counts.values())} {counts}")
     print(f"[ok] разделы меню: {len(menu)}")
-    print(f"[ok] итого: {len(data)} пар -> {out_path}")
-    sample = dict(list(names.items())[:4] + list(menu.items())[:6])
-    for en, ru in sample.items():
-        print(f"     {en!r} -> {ru!r}")
+    print(f"[ok] dict.json: exact={len(exact)}, words={len(words)} -> {dict_path}")
     return 0
 
 
