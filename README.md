@@ -1,37 +1,65 @@
-# Kenshi RU — Переводчик модов (для пользователя)
+# Kenshi RU — Переводчик модов
 
-Моды Steam Workshop → на русский (или другой язык — см. ниже). Локальный ИИ (qwen) переводит, ты можешь
-сам править каждую фразу в `translate.csv` и пересобирать .mod. Ничего не копируется в
-`mods\` — перевод пишется **на месте**, в папке мода в Steam, резервная копия оригинала —
-рядом (`.orig_<хэш>.backup`). Поддерживается **любая пара языков**, которую понимает
-подключённая LLM (см. секцию «Не только английский → русский» ниже).
+Моды Steam Workshop → на русский (или другой язык). Локальный ИИ переводит, ты можешь
+сам править каждую фразу в `translate.csv` и пересобирать `.mod`. Ничего не копируется
+в `mods\` — перевод пишется **на месте**, в папке мода в Steam.
+Резервная копия оригинала — рядом (`.orig_<хэш>.backup`).
+Поддерживается **любая пара языков**, которую понимает подключённая LLM.
+---
+
+## 🚀 Коротко: запуск за 10 минут (для новичка)
+
+> **Вам не нужно собирать DLL** — она уже лежит в репозитории:
+> `bin\Release\net9.0-windows\kenshi-modtranslate.dll`.
+
+**Список «поставить один раз» (Windows):**
+
+| # | Что | Откуда | Сколько |
+|---|-----|--------|---------|
+| 1 | **Python 3.10+** | [python.org](https://python.org) → Windows → installer → галка **«Add Python to PATH»** → Install | ~30 сек |
+| 2 | **.NET Desktop Runtime 9** (x64) | [dotnet.microsoft.com/download/dotnet/9.0](https://dotnet.microsoft.com/download/dotnet/9.0) → «.NET **Desktop** Runtime» → «x64» | ~30 сек |
+| 3 | **Steam** (если ещё нет) | [steampowered.com](https://steampowered.com) | ~1 мин |
+| 4 | **Kenshi** в Steam (если ещё нет) | [steampowered.com](https://store.steampowered.com) | ~5 мин |
+| 5 | **LLM-сервер** (локальный или облачный) | см. ниже Шаг 4 | — |
+
+> .NET **SDK** НЕ нужен. SDK — только если хочешь править C#-код (сборка нового .mod-парсера).
+> Для **запуска** достаточно Desktop Runtime.
+
+**Теперь — три команды в терминале** (или просто двойной клик по `translate_mods.bat`):
+```
+pip install -r requirements.txt              # одна библиотека (tqdm + requests)
+# отредактируйте paths.game и paths.workshop в config.json (2 строки)
+translate_mods.bat                           # начать перевод всех модов
+```
+
+Готово. Дальше — двойные клики по `.bat`, никаких «собери/компилируй».
 
 ---
 
-## 📦 Установка (что нужно и как настроить)
+## 📦 Установочные шаги (подробно)
 
-Проект рассчитан на **Windows 10/11**. Стоимость: **0 ₽** — всё работает локально (кроме самого Kenshi в Steam).
+Проект рассчитан на **Windows 10/11**. Стоимость: **0 ₽** — всё работает локально
+(кроме самого Kenshi в Steam и LLM-сервера, если он у вас платный/облачный).
 
-### 1. Системные требования
+### Шаг 1. Получить проект
 
-| Компонент | Версия | Зачем |
-|---|---|---|
-| **Windows** | 10/11 | C#-CLI таргет `net9.0-windows` |
-| **Python** | 3.10+ (тест на 3.11) | Пайплайн перевода и CSV |
-| **.NET SDK** | **9.x** | Собрать `kenshi-modtranslate.dll` (C#-парсер .mod) |
-| **Steam + Kenshi** | установленная игра | Моды в `steamapps/workshop/content/233860` |
-| **LLM локально** | OpenAI-совместимый, `http://localhost:11234/v1` | Переводчик (qwen3.8:27b и т.п.) |
-| **Диск** | ~5 ГБ свободно | Собрка + кеш + резервные копии |
-
-### 2. Шаг за шагом
-
-#### 2.1. Клонировать проект (или скопировать папку)
+**Вариант A — Git (рекомендуется):**
 ```
 git clone https://github.com/KorolevOl/KenshiModTranslate.git
 cd KenshiModTranslate
 ```
 
-#### 2.2. Python
+**Вариант B — просто скопировать папку** (без Git):
+Скачайте ZIP с GitHub (зелёная кнопка «Code» → «Download ZIP») → распакуйте
+в папку, например `C:\KenshiModTranslate`. Дальше — то же самое.
+
+> ⚠️ При копировании вручную убедитесь, что папка содержит:
+> `translate_mods.bat`, `translate_mods.py`, `config.json`,
+> `bin\Release\net9.0-windows\kenshi-modtranslate.dll`,
+> `bin\Release\net9.0-windows\KenshiCore.dll`.
+
+
+### Шаг 2. Python
 Установить **Python 3.10+** с галкой «Add Python to PATH» (python.org → Windows → installer).
 Проверить:
 ```
@@ -44,7 +72,7 @@ pip install -r requirements.txt
 ```
 > Если tqdm уже есть — `pip install -r requirements.txt` скажет «already satisfied», это ок.
 
-#### 2.3. .NET 9 Desktop Runtime
+### Шаг 3. .NET 9 Desktop Runtime
 **DLL уже в этом репо** — `bin\Release\net9.0-windows\kenshi-modtranslate.dll` закоммичен
 вместе с зависимостями ( `KenshiCore.dll`, `*.runtimeconfig.json`, `*.deps.json` ).
 Вам нужен только **.NET 9 Desktop Runtime** на машине (не SDK — только для запуска):
@@ -71,7 +99,7 @@ dotnet build -c Release
 git add bin/Release/net9.0-windows/kenshi-modtranslate.dll && git commit
 ```
 
-#### 2.4. LLM-сервер (локальный)
+### Шаг 4. LLM-сервер (локальный)
 В `config.json`:
 ```json
 "llm": {
@@ -86,7 +114,7 @@ curl http://localhost:11234/v1/models
 ```
 Должен вернуть JSON со списком моделей. Если сервер под другим именем/портом — поправь `base_url`.
 
-#### 2.5. Пути в `config.json`
+### Шаг 5. Пути в `config.json`
 Правило: **абсолютные** — только для каталогов **вне** папки проекта (game, workshop на `E:`); **относительные к папке проекта** — для всего, что рядом (`state`, `dotnet`, `modtranslate_cli`).
 ```json
 "paths": {
@@ -108,23 +136,32 @@ curl http://localhost:11234/v1/models
 > Относительные пути всегда резолвятся **относительно папки проекта**, где лежит
 > `config.json` — работает из любого CWD и из любого `.bat`.
 
-#### 2.6. (Опционально) Словарь / Чёрный список / Промт
+### Шаг 6. (Опционально) Словарь / Чёрный список / Промт
 Файлы уже есть с разумными дефолтами, можно править:
 - `dict.json` — свои «канонические» термины (`exact`, `words` — см. раздел «Словарь терминов»)
 - `exclude.txt` — регулярные выражения, какие моды не трогать
 - `prompt.txt` — инструкции ИИ (тон, правила, адаптация)
 
-### 3. Прогнать самопроверку (0 LLM, без переводов)
+### Шаг 7. Самопроверка (без LLM, без переводов)
 ```
-verify_translations.bat                # проверит структуру + кеш — если кеш пуст, «нет данных»
-python search_mods.py "test"           # проверит, что .mod читаются
+verify_translations.bat
+python search_mods.py "test"
 ```
-Если ничего не падает с ошибками — всё готово, можно переводить:
+Если ничего не падает — можно переводить:
 ```
 translate_mods.bat "Pocket Change 2.0"
 ```
 
-### 4. Типичные ошибки установки
+### Шаг 8. Обновление проекта (когда появится новый релиз)
+```
+cd KenshiModTranslate
+git pull
+pip install -r requirements.txt    # если requirements.txt поменялся
+```
+> `dotnet build` **НЕ нужен** в 99% случаев — DLL уже в репозитории и обновляется
+> вместе с кодом при новом релизе. Нужен только если вы **сами** правите `Program.cs`.
+
+### Типичные ошибки установки
 
 | Симптом | Причина / Fix |
 |---|---|
@@ -136,15 +173,6 @@ translate_mods.bat "Pocket Change 2.0"
 | `Connection refused: localhost:11234` | LLM-сервер не запущен – поднять ollama/ollama-weldbook |
 | `404 /v1/models` | `base_url` в `config.json` неверен |
 | `Mod not found` (мод не в списке) | `paths.workshop` не та папка или мод отключён в Steam |
-
-### 5. Обновление проекта
-```
-cd KenshiModTranslate
-git pull
-pip install -r requirements.txt    # если requirements.txt поменялся
-dotnet build -c Release            # если Program.cs / csproj поменялись
-```
-Редкий случай: если структура кешей (`state/`) менялась — очистить `state/` (кеш можно терять, LLM переведёт заново).
 
 ---
 
@@ -476,7 +504,8 @@ ru$                   # имя кончается на «ru»
 | Симптом | Что делать |
 |---|---|
 | `python not found in PATH` | Установи Python 3.10+ и добавь в PATH |
-| `dotnet CLI failed` | Нужна `H:\dotnet9\dotnet.exe` (см. `config.json`) |
+| `dotnet CLI failed` | .NET Desktop Runtime 9 не установлен, либо `bin\Release
+et9.0-windows\kenshi-modtranslate.dll` отсутствует (должна быть в репо) |
 | Ложный-мод / пустой кеш | `verify_translations.bat --details`, затем `--fix` |
 | Неверный порядок/потеря строк | `fix_translations.bat "имя"` — починит только битое |
 | Удалить кеш мода | `verify_translations.bat --purge "имя"` |
