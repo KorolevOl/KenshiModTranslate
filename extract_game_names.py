@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""extract_game_names.py — из официального locale/ru_RU/gamedata.po (в папке игры)
-выгружает НАЗВАНИЯ рас, фракций, банд/групп (EN-ключ → RU-значение) в JSON.
+"""extract_game_names.py — из официального locale/ru_RU игры Kenshi
+(gamedata.po + LC_MESSAGES/main.po) выгружает EN-ключ → RU-значение:
 
-Критерий «название» (а не описание): комментарий блока ``#. Name: X`` совпадает с
-``msgid`` — именно так движок помечает display-имя записи. Типы:
-  RACE, RACE_GROUP — расы и группы рас;  FACTION — фракции/банды.
-Остальные (описания, кампании) исключаются. Мусор-строки (-----edad) — тоже.
+  1) НАЗВАНИЯ рас, фракций, банд/групп — блок ``#. Name: X`` где X == msgid
+     (тип RACE / RACE_GROUP / FACTION), из gamedata.po;
+  2) РАЗДЕЛЫ МЕНЮ ПОСТРОЙКИ/UI — строки, полностью в ВЕРХНЕМ РЕГИСТРЕ
+     (WALLS, STORAGE, POWER, FOOD, DEFENCE, FARMING, TRAINING, CRAFTING,
+     LIGHTS, TECH, BUILDINGS …) — переводчики пишут их капсом, как в меню игры,
+     поэтому это и есть канонические RU-заголовки разделов.
+
+Итог: game_names_ru.json (ключ = английская строка, значение = русская).
+Запуск:  python extract_game_names.py
 """
 import json
 import os
@@ -13,8 +18,20 @@ import re
 import sys
 
 GAME = r"E:\steamlibrary\steamapps\common\kenshi"
-PO = os.path.join(GAME, "locale", "ru_RU", "gamedata.po")
+GAMEDATA_PO = os.path.join(GAME, "locale", "ru_RU", "gamedata.po")
+MAIN_PO = os.path.join(GAME, "locale", "ru_RU", "LC_MESSAGES", "main.po")
 WANT_TYPES = ("FACTION", "RACE", "RACE_GROUP")
+
+# Канонические РАЗДЕЛЫ МЕНЮ ПОСТРОЙКИ (вкладки build-меню Kenshi).
+# RU-значения ищем в .po: сначала в верхнем регистре (как в меню игры), потом mixed-case.
+BUILD_MENU = [
+    "Furniture", "Storage", "Weapons", "Defence", "Research", "Power",
+    "Water", "Food", "Farming", "Mining", "Military", "Trade", "Training",
+    "Walls", "Crafting", "Lighting", "Turrets", "Buildings", "Exterior",
+    "Interior", "Camping",
+]
+# алиасы: категория → как она реально именуется в .po (капс-метка build-меню)
+MENU_ALIASES = {"Lighting": "LIGHTS"}
 
 
 def unesc(s):
@@ -44,36 +61,86 @@ def parse_po(path):
     return out
 
 
+def flat_pairs(path):
+    """Плоские (EN, RU) пары из .po: msgid → msgstr, без типа/имени."""
+    txt = open(path, encoding="utf-8").read()
+    res = {}
+    for m in re.finditer(r'msgid\s+"([^"\n]+)"\s*\nmsgstr\s+"([^"\n]+)"', txt):
+        en, ru = unesc(m.group(1)).strip(), unesc(m.group(2)).strip()
+        if en and ru and en != ru:
+            res.setdefault(en, ru)
+    return res
+
+
+def build_menu(pairs_gd, pairs_m):
+    """RU-значения для категорий build-меню из .po.
+
+    Приоритет на каждую категорию:
+      1) caps-ключ в gamedata.po  (WALLS→СТЕНЫ, POWER→ЭЛЕКТРИЧЕСТВО …) —
+         именно их игра рендерит в меню постройки;
+      2) caps-ключ в main.po      (запасной GUI);
+      3) mixed-case ключ в main/ gamedata (Furniture→Мебель, Weapons→Оружие …).
+    Алиас: Lighting → LIGHTS (так называется секция света в .po).
+    """
+    def pick(keys):
+        for en, ru in pairs_gd.items():
+            if en in keys and en.isupper() and en.replace(" ", "").isalpha():
+                return ru
+        for en, ru in pairs_m.items():
+            if en in keys and en.isupper() and en.replace(" ", "").isalpha():
+                return ru
+        for en, ru in {**pairs_m, **pairs_gd}.items():  # mixed: GUI важнее
+            if en in keys:
+                return ru
+        return None
+
+    d = {}
+    for bm in BUILD_MENU:
+        keys = {bm, bm.upper(), bm.lower()}
+        if bm in MENU_ALIASES:
+            keys |= {MENU_ALIASES[bm], MENU_ALIASES[bm].upper(), MENU_ALIASES[bm].lower()}
+        ru = pick(keys)
+        if ru:
+            d[bm] = ru
+    return d
+
+
 def main():
-    if not os.path.isfile(PO):
-        print("[!] нет", PO, file=sys.stderr)
+    if not (os.path.isfile(GAMEDATA_PO) and os.path.isfile(MAIN_PO)):
+        print("[!] нет .po в папке игры:", GAME, file=sys.stderr)
         return 1
-    rows = parse_po(PO)
-    # названия: нужный тип + имя (name==msgid) + валидный EN + не-эхо + не-пусто
-    ok_en = re.compile(r"^[A-Za-z0-9][A-Za-z0-9()\-'/ ]{1,80}$")
-    result = {}
-    counts = {t: 0 for t in WANT_TYPES}
+
+    # 1) имена рас/фракций/групп
+    rows = parse_po(GAMEDATA_PO)
+    ok_en = re.compile(r"^[A-Za-z0-9][A-Za-z0-9()\-''/ ]{1,80}$")
+    names, counts = {}, {t: 0 for t in WANT_TYPES}
     for r in rows:
         if r["type"] not in WANT_TYPES or not r["is_name"]:
             continue
         en, ru = r["en"], r["ru"]
-        if not ru or not ok_en.match(en):
+        if not ru or not ok_en.match(en) or ru == en:
             continue
-        if ru == en:  # эхо — не переведено, пропускаем
-            continue
-        if en not in result:
-            result[en] = ru
+        if en not in names:
+            names[en] = ru
             counts[r["type"]] += 1
+
+    # 2) разделы меню постройки (канонический список BUILD_MENU, RU из .po)
+    pairs_m = flat_pairs(MAIN_PO)
+    pairs_gd = flat_pairs(GAMEDATA_PO)
+    menu = build_menu(pairs_gd, pairs_m)
+
+    data = {**names, **menu}
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "game_names_ru.json")
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=2, sort_keys=True)
-    total = sum(counts.values())
-    print(f"[ok] блоков в .po: {len(rows)}; названий: {total} {counts}")
-    print(f"[ok] файл: {out_path}")
-    for en, ru in list(result.items())[:10]:
+        json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
+
+    print(f"[ok] блоков в .po: {len(rows)}")
+    print(f"[ok] имена рас/фракций/групп: {sum(counts.values())} {counts}")
+    print(f"[ok] разделы меню: {len(menu)}")
+    print(f"[ok] итого: {len(data)} пар -> {out_path}")
+    sample = dict(list(names.items())[:4] + list(menu.items())[:6])
+    for en, ru in sample.items():
         print(f"     {en!r} -> {ru!r}")
-    if total == 0:
-        return 1
     return 0
 
 
