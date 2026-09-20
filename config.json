@@ -16,19 +16,19 @@
   },
   "translate": {
     "context_window": 200000,
-    "max_batch_lines": 180,
+    "max_batch_lines": 50,
     "max_output_tokens": 120000,
     "max_tokens": 200000,
     "min_chunk": 4,
     "http_retries": 3,
     "force_retranslate": false,
     "log_dir": "logs",
-    "log_max_lines": 50,
+    "log_max_lines": 500,
     "reasoning_effort": "none",
     "enable_thinking": false,
-    "temperature": 0.7,
+    "temperature": 0.5,
     "po_hints": true,
-    "po_hints_max": 30
+    "po_hints_max": 50
   },
   "dict": "dict.json",
   "exclude_file": "exclude.txt"

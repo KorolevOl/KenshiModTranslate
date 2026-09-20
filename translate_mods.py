@@ -27,6 +27,7 @@ Thinking (reasoning) control — two independent levers:
 import json, os, re, shutil, sys, time, urllib.request
 import subprocess
 from validate_translation import validate_batch, audit_map, check_row, BAD_FIX_LEVELS, classify_row
+import prefilter
 
 def _needs_translation(en):
     """Единый источник правды «нужна ли LLM-перевода эта строка, когда перевода нет».
@@ -60,6 +61,7 @@ P, L, T = CFG["paths"], CFG["llm"], CFG["translate"]
 GAME     = P["game"]
 WORKSHOP = P["workshop"]
 STATE    = P["state"]
+prefilter.set_state_dir(STATE)      # кеш уже переведённых модев (СЛОЙ 2 reuse)
 MODS_DIR = P.get("mods_dir") or os.path.join(GAME, "mods")
 DOTTNET  = P["dotnet"]
 CLI_DOTS = P["modtranslate_cli"]
@@ -617,12 +619,41 @@ def translate_entries(entries, done_map, name, ctx):
     # mismatch), унося с собой соседние РЕАЛЬНО битые строки (NewRecruits:
     # 813/4689 упали из-за 4688 squeal + 4922/4923 entry-ID).
     todo = [e for e in todo if _needs_translation(e.get("original") or "")]
+    # ---- ПРЕ-LLM ФИЛЬТР (2026-09-21, по просьбе пользователя) ----
+    # Два слоя до отправки батча LLM:
+    #   СЛОЙ 1 — «нечего переводить» (regex): чистая кириллица/знаки/числа/
+    #            CJK (после чистки BBCode+[h1]...[/h1] и слэш-тегов /AAA/) —
+    #            в ней нет ни одной латинской буквы → нечего LLM «давать».
+    #            Passthrough: в .mod останется оригинал. Не входит в батч.
+    #   СЛОЙ 2 — «уже переведено»: готовый RU из dict.json/.по игры/кешей
+    #            ранее переведённых модов. Подставляем, НЕ спрашиваем LLM
+    #            (экономим токены+время, держим консистентное написание).
+    # Эхо (RU==EN) и грязный RU (кириллица в /.../) — НЕ считаем готовым.
+    keep, n_passthrough, n_reused = [], 0, 0
+    for e in todo:
+        en = e.get("original") or ""
+        if prefilter.nothing_to_translate(en):
+            n_passthrough += 1
+            done_map[str(e["i"])] = str(en)   # pass: оставляем оригинал
+            continue
+        ru, src = prefilter.reuse_lookup(en)
+        if ru:
+            n_reused += 1
+            # apply_dict: если en в exact — берём канон RU; иначе подставляем как есть
+            done_map[str(e["i"])] = apply_dict(en, ru)
+            continue
+        keep.append(e)
+    todo = keep
+    if n_passthrough:
+        log(f"  [pre-LLM: нечего переводить] {n_passthrough} строк (кириллица/знаки/CJK) — passthrough, не спрашиваю LLM")
+    if n_reused:
+        log(f"  [pre-LLM: уже переведено] {n_reused} строк (dict/game.po/ранее перевед.моды) — беру готовый RU, не спрашиваю LLM")
+    if n_passthrough or n_reused:
+        save_map()
     skipped = len(entries) - len(done_map) - len(todo)
-    if skipped > 0:
-        log(f"  [skip] {skipped} строк не требуют перевода (onomatopoeia/entry-ID/already_ru) — не спрашиваю LLM")
     total_rows = len(todo)
     if total_rows == 0:
-        log("  все строки уже переведены (resume) - перехожу к apply")
+        log(f"  все строки обработаны без LLM: {n_passthrough} passthrough + {n_reused} reuse → перехожу к apply")
         return done_map
     ovh = sys_overhead_ch()
     # префикс-суммы: символов (для plan_chunk) и токенов (для прогрессбара)
