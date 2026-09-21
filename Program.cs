@@ -33,10 +33,38 @@ catch (Exception ex)
     return 1;
 }
 
+// (KEY_NAME_TYPES moved inside ExtractEntries: top-level program cannot hold fields)
 static List<Entry> ExtractEntries(ModData data)
 {
     var entries = new List<Entry>();
     var typeCodes = ModRecord.ModTypeCodes.Values;
+
+    // OPTION A (2026-09-22, rebirth.mod incident): cross-reference guard.
+    // A string that is BOTH a record.Name AND a field value of some record is a
+    // key other records reference (SFX events -> action names, building category
+    // -> category record name, ...). Renaming one side without the other desyncs
+    // the binding (combat/stealth animations, technique triggers, SFX). Exclude
+    // every such string from the translatable set. Normalization: trim + casefold.
+    var nameSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var valueSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    if (data.Records != null)
+    {
+        foreach (var r in data.Records)
+        {
+            if (!string.IsNullOrWhiteSpace(r.Name)) nameSet.Add(r.Name.Trim());
+            if (r.StringFields != null)
+                foreach (var kv in r.StringFields)
+                    if (!string.IsNullOrWhiteSpace(kv.Value)) valueSet.Add(kv.Value.Trim());
+        }
+    }
+    int xrefExcluded = 0, animKeyExcluded = 0;
+    // Record types whose Name is ALWAYS an engine key (animation asset refs),
+    // never user-visible text. (KenshiCore.ModTypeCodes: 5=ANIMAL_ANIMATION, 24=ANIMATION,
+    // 105=ANIMATION_EVENT, 112=ANIMATION_FILE, 17=COMBAT_TECHNIQUE)
+    var keyNameTypes = new HashSet<int> { 5, 17, 24, 105, 112 };
+    static bool IsXref(string? v, HashSet<string> n, HashSet<string> vals)
+        => v != null && !string.IsNullOrWhiteSpace(v)
+           && n.Contains(v.Trim()) && vals.Contains(v.Trim());
     // 2026-09-19: FileType 16 И 17. v17 хранит Description в блоке Details
     // (ReverseEngineer.TryParseDetails выносит его в Header.Description).
     // Раньше условие ==16 молча пропускало ВСЕ v17-моды (31 «no mapping»).
@@ -52,15 +80,25 @@ static List<Entry> ExtractEntries(ModData data)
     {
         var name = record.Name ?? "";
         if (!string.IsNullOrEmpty(name) && !typeCodes.Any(s => name.Contains(s)))
+        {
+            // OPTION A: skip names that are engine keys (anim types) or cross-referenced strings
+            if (keyNameTypes.Contains(record.RecordType)) { animKeyExcluded++; continue; }
+            if (IsXref(name, nameSet, valueSet)) { xrefExcluded++; continue; }
             entries.Add(new Entry { i = entries.Count, key = $"record{record.StringId}_name", original = name });
+        }
         if (record.StringFields != null)
             foreach (var kvp in record.StringFields)
             {
                 var v = kvp.Value ?? "";
                 if (string.IsNullOrWhiteSpace(v) || Entry.Blacklist.Contains(kvp.Key) || Entry.KeyBlacklist.Contains(kvp.Key)) continue;
+                // OPTION A: also skip field values that are cross-referenced names
+                //   (SFX event → action name, building category → category record, ...)
+                if (IsXref(v, nameSet, valueSet)) { xrefExcluded++; continue; }
                 entries.Add(new Entry { i = entries.Count, key = $"record{record.StringId}_{kvp.Key}", original = v });
             }
     }
+    if (xrefExcluded > 0 || animKeyExcluded > 0)
+        Console.Error.WriteLine($"guards: excluded {xrefExcluded} cross-referenced strings, {animKeyExcluded} anim-key names");
     return entries;
 }
 
@@ -104,6 +142,10 @@ static int DoApply(string modPath, string mappingJson, string outMod)
 
     int applied = 0;
     var records = re.modData.Records;
+    // (2026-09-22) NOTE on the rebirth incident: extract() is the enforced guard —
+    // it excludes cross-referenced names and anim-type names from `entries`. apply()
+    // only writes what extract() returned, so stale/poisoned mapping rows for those
+    // keys are simply ignored here (map index not in the live entries set).
     foreach (var e in entries)
     {
         if (!map.TryGetValue(e.i, out var trans)) continue;
