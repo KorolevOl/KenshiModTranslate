@@ -48,6 +48,8 @@ import translate_mods as TM
 
 def find_backup(target):
     """<имя>.mod.orig_<hash>.backup рядом с target. Возвращает путь или None."""
+    if not target:
+        return None
     d = os.path.dirname(target)
     base = os.path.basename(target)  # e.g. "Great Beak Things.mod"
     try:
@@ -158,6 +160,17 @@ def main():
         print(f"[exclude] пропущено: {', '.join(m['name'] for m in skipped_excl[:8])}"
               + (f" …(+{len(skipped_excl)-8})" if len(skipped_excl) > 8 else "")
               + "  (override: --include-excluded)")
+    # фильтруем папки Workshop БЕЗ .mod-файла (например, пустые папки — только бэкап)
+    # и сообщаем о них
+    no_mod = [m for m in mods if not m.get("modfile")]
+    if no_mod:
+        for m in no_mod:
+            print(f"  [skip] #{m['id']} {m['name']} — нет .mod-файла (пропущено)")
+        mods = [m for m in mods if m.get("modfile")]
+        if not mods:
+            print("revert: ни в одной папке нет .mod-файла — нечего откатывать")
+            return 3
+
     if not mods:
         print("revert: нечего откатывать (моды не найдены или все в исключениях)")
         return 3
@@ -168,6 +181,9 @@ def main():
     ok = fail = skip = 0
     for i, m in enumerate(mods, 1):
         tgt = m["modfile"]
+        if not tgt:
+            skip += 1
+            continue
         status, detail = revert_one(tgt, dry_run=dry_run)
         tag = {"ok": "OK  ", "skip": "SKIP", "error": "ERR "}[status]
         print(f"  [{i}/{len(mods)}] {tag} #{m['id']} {os.path.basename(tgt):42} — {detail}")
