@@ -1,4 +1,4 @@
-<svg viewBox="0 0 1070 660" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-animation="trace" data-preset="editorial" data-quality-profile="showcase" style="" width="1070" height="660" xmlns="http://www.w3.org/2000/svg"><style>
+<svg viewBox="0 0 1040 652" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="editorial" data-quality-profile="showcase" style="" width="1040" height="652" xmlns="http://www.w3.org/2000/svg"><style>
 /*
 JetBrains Mono variable WOFF2 subsets from Google Fonts service revision v24.
 These fixed bytes are shared by the viewer and its SVG/raster exports.
@@ -440,233 +440,240 @@ rect.c-bg-rect { fill: var(--bg); }
         <rect width="100%" height="100%" fill="url(#grid)"/>
 
         <!-- Swimlanes -->
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-0" x="40" y="52" width="990" height="106" rx="10" class="c-lane" stroke-width="1"/>
-        <text x="54" y="74" class="t-dim" font-size="10" font-weight="600">01 / Вход / игра</text>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-0" x="40" y="52" width="972" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="74" class="t-dim" font-size="10" font-weight="600">01 / Вход / запуск</text>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-1" x="40" y="178" width="990" height="106" rx="10" class="c-lane" stroke-width="1"/>
-        <text x="54" y="200" class="t-dim" font-size="10" font-weight="600">02 / Конвейер (Python + C#)</text>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-1" x="40" y="176" width="972" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="198" class="t-dim" font-size="10" font-weight="600">02 / Конвейер (Python + C#)</text>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-2" x="40" y="304" width="990" height="106" rx="10" class="c-lane" stroke-width="1"/>
-        <text x="54" y="326" class="t-dim" font-size="10" font-weight="600">03 / Хранилище (файлы / кэш)</text>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-2" x="40" y="300" width="972" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="322" class="t-dim" font-size="10" font-weight="600">03 / ИИ / хранилище (кэш и словари)</text>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-3" x="40" y="430" width="990" height="106" rx="10" class="c-lane" stroke-width="1"/>
-        <text x="54" y="452" class="t-dim" font-size="10" font-weight="600">04 / Результат</text>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-3" x="40" y="424" width="972" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="446" class="t-dim" font-size="10" font-weight="600">04 / Результат</text>
 
         <!-- Phase headers -->
-        <line x1="67" y1="35" x2="279" y2="35" class="a-default" stroke-width="1.1"/>
-        <rect x="67" y="27" width="212" height="16" rx="4" class="c-mask"/>
-        <text x="173" y="39" class="t-muted" font-size="8" font-weight="600" text-anchor="middle">Извлечь</text>
-        <line x1="393.19999999999993" y1="35" x2="686.3999999999999" y2="35" class="a-emphasis" stroke-width="1.1"/>
-        <rect x="393.19999999999993" y="27" width="293.2" height="16" rx="4" class="c-mask"/>
-        <text x="539.8" y="39" class="t-backend" font-size="8" font-weight="600" text-anchor="middle">Перевести</text>
-        <line x1="790.4" y1="35" x2="1002.4" y2="35" class="a-default" stroke-width="1.1"/>
-        <rect x="790.4" y="27" width="212" height="16" rx="4" class="c-mask"/>
-        <text x="896.4" y="39" class="t-muted" font-size="8" font-weight="600" text-anchor="middle">Собрать</text>
+        <line x1="77" y1="35" x2="169" y2="35" class="a-default" stroke-width="1.1"/>
+        <rect x="77" y="27" width="92" height="16" rx="4" class="c-mask"/>
+        <text x="123" y="39" class="t-muted" font-size="8" font-weight="600" text-anchor="middle">Ввод</text>
+        <line x1="255" y1="35" x2="525" y2="35" class="a-emphasis" stroke-width="1.1"/>
+        <rect x="255" y="27" width="270" height="16" rx="4" class="c-mask"/>
+        <text x="390" y="39" class="t-backend" font-size="8" font-weight="600" text-anchor="middle">Перевод</text>
+        <line x1="591" y1="35" x2="879.8" y2="35" class="a-dashed" stroke-width="1.1"/>
+        <rect x="591" y="27" width="288.79999999999995" height="16" rx="4" class="c-mask"/>
+        <text x="735.4" y="39" class="t-messagebus" font-size="8" font-weight="600" text-anchor="middle">Сборка</text>
 
         <!-- Workflow groups -->
 
 
         <!-- Edge paths -->
-        <path data-edge-from="apply" data-edge-to="csv" data-edge-label="export" data-edge-key="0" data-edge-id="ap-csv" data-composition-points="901.4,246;1042,246;1042,372;910.4,372" d="M 901.4 246 L 1042 246 L 1042 372 L 910.4 372" class="a-dashed" data-animate="edge" style="--step:7" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="apply" data-edge-to="final_mod" data-edge-label="write .mod" data-edge-key="1" data-edge-id="ap-fm" data-composition-points="771.4,246;755.4,246;755.4,552;956.4,552;956.4,524" d="M 771.4 246 L 755.4 246 L 755.4 552 L 956.4 552 L 956.4 524" class="a-emphasis" data-animate="edge" style="--step:4" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="csv" data-edge-to="apply" data-edge-label="import (пересборка)" data-edge-key="2" data-edge-id="csv-ap" data-composition-points="843.4,346;843.4,272" d="M 843.4 346 L 843.4 272" class="a-dashed" data-animate="edge" style="--step:9" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="extract" data-edge-to="entries" data-edge-label="запись EN" data-edge-key="3" data-edge-id="ex-ent" data-composition-points="163,253;20,253;20,372;163,372" d="M 163 253 L 20 253 L 20 372 L 163 372" class="a-dashed" data-animate="edge" style="--step:10" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="extract" data-edge-to="prefilter" data-edge-label="EN-строки" data-edge-key="4" data-edge-id="ex-pf" data-composition-points="303,246;364.2,246" d="M 303 246 L 364.2 246" class="a-default" data-animate="edge" style="--step:1" stroke-width="1.4" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="final_mod" data-edge-to="game" data-edge-label="запуск" data-edge-key="5" data-edge-id="fm-game" data-composition-points="1021.4,498;1051.2,498;1051.2,120;1016.4,120" d="M 1021.4 498 L 1051.2 498 L 1051.2 120 L 1016.4 120" class="a-default" data-animate="edge" style="--step:5" stroke-width="1.4" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="llm" data-edge-to="apply" data-edge-label="RU-перевод" data-edge-key="6" data-edge-id="llm-ap" data-composition-points="640.4,220;640.4,204;836.4,204;836.4,220" d="M 640.4 220 L 640.4 204 L 836.4 204 L 836.4 220" class="a-emphasis" data-animate="edge" style="--step:3" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="prefilter" data-edge-to="llm" data-edge-label="нужен LLM" data-edge-key="7" data-edge-id="pf-llm" data-composition-points="514.2,246;575.4,246" d="M 514.2 246 L 575.4 246" class="a-emphasis" data-animate="edge" style="--step:2" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="prefilter" data-edge-to="state" data-edge-label="lookup (кэш)" data-edge-key="8" data-edge-id="pf-st" data-composition-points="514.2,246;530.2,246;530.2,426;439.2,426;439.2,398" d="M 514.2 246 L 530.2 246 L 530.2 426 L 439.2 426 L 439.2 398" class="a-dashed" data-animate="edge" style="--step:12" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="workshop" data-edge-to="extract" data-edge-label="extract" data-edge-key="9" data-edge-id="w-ex" data-composition-points="178,120;233,120;233,220" d="M 178 120 L 233 120 L 233 220" class="a-default" data-animate="edge" style="--step:0" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="apply" data-edge-to="csv" data-edge-label="export" data-edge-key="0" data-edge-id="e-apply-csv" data-composition-points="712,243;758.8,243" d="M 712 243 L 758.8 243" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="csv" data-edge-to="mod_ru" data-edge-label="apply" data-edge-key="1" data-edge-id="e-csv-mod" data-composition-points="908.8,243;1024,243;1024,491;908.8,491" d="M 908.8 243 L 1024 243 L 1024 491 L 908.8 491" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="extract" data-edge-to="prefilter" data-edge-key="2" data-edge-id="e-ex-pref" data-composition-points="376,243;404,243" d="M 376 243 L 404 243" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="llm" data-edge-to="apply" data-edge-label="пере-вёл" data-edge-key="3" data-edge-id="e-llm-apply" data-composition-points="712,367;728,367;728,290;637,290;637,269" d="M 712 367 L 728 367 L 728 290 L 637 290 L 637 269" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="prefilter" data-edge-to="cache" data-edge-label="кэш-хит" data-edge-key="4" data-edge-id="e-pref-cache" data-composition-points="465,269;465,290;301,290;301,341" d="M 465 269 L 465 290 L 301 290 L 301 341" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="prefilter" data-edge-to="dict" data-edge-label="lookup" data-edge-key="5" data-edge-id="e-pref-dict" data-composition-points="479,269;479,290;388,290;388,367;404,367" d="M 479 269 L 479 290 L 388 290 L 388 367 L 404 367" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="prefilter" data-edge-to="llm" data-edge-label="miss" data-edge-key="6" data-edge-id="e-pref-llm" data-composition-points="493,269;493,290;630,290;630,341" d="M 493 269 L 493 290 L 630 290 L 630 341" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="probe" data-edge-to="extract" data-edge-key="7" data-edge-id="e-probe-ex" data-composition-points="198,243;226,243" d="M 198 243 L 226 243" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="search" data-edge-to="probe" data-edge-key="8" data-edge-id="e-search-probe" data-composition-points="48,119;32,119;32,236;48,236" d="M 48 119 L 32 119 L 32 236 L 48 236" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="user" data-edge-to="probe" data-edge-label="bat" data-edge-key="9" data-edge-id="e-user-probe" data-composition-points="301,145;301,166;32,166;32,250;48,250" d="M 301 145 L 301 166 L 32 166 L 32 250 L 48 250" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
 
         <!-- Nodes -->
-        <g id="node-workshop" data-node-id="workshop" data-node-label=".mod (EN)" tabindex="0" role="button" aria-label="Focus .mod (EN), Steam Workshop, Вход / игра › Извлечь" aria-pressed="false" data-node-kind="database" data-node-sublabel="Steam Workshop" data-node-context="Вход / игра › Извлечь">
-          <title>.mod (EN) · Steam Workshop · Вход / игра › Извлечь</title>
-          <rect x="48" y="94" width="130" height="52" rx="6" class="c-mask"/>
-          <rect x="48" y="94" width="130" height="52" rx="6" class="c-database" data-animate="node" style="--step:0" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(54 100) scale(0.6875)">
-            <ellipse cx="8" cy="4" rx="5" ry="2"/>
-            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
-          </g>
-          <text data-node-label="" x="113" y="115" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">.mod (EN)</text>
-          <text x="113" y="132" class="t-muted" font-size="8" text-anchor="middle">Steam Workshop</text>
-        </g>
-
-        <g id="node-game" data-node-id="game" data-node-label="Kenshi" tabindex="0" role="button" aria-label="Focus Kenshi, игра на русском, Вход / игра › Собрать" aria-pressed="false" data-node-kind="external" data-node-sublabel="игра на русском" data-node-context="Вход / игра › Собрать">
-          <title>Kenshi · игра на русском · Вход / игра › Собрать</title>
-          <rect x="896.4" y="94" width="120" height="52" rx="6" class="c-mask"/>
-          <rect x="896.4" y="94" width="120" height="52" rx="6" class="c-external" data-animate="node" style="--step:6" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(902.4 100) scale(0.6875)">
-            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
-            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
-          </g>
-          <text data-node-label="" x="956.4" y="115" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Kenshi</text>
-          <text x="956.4" y="132" class="t-muted" font-size="8" text-anchor="middle">игра на русском</text>
-        </g>
-
-        <g id="node-extract" data-node-id="extract" data-node-label="C# Extract" tabindex="0" role="button" aria-label="Focus C# Extract, dotnet CLI → EN-строки, Конвейер (Python + C#) › Извлечь" aria-pressed="false" data-node-kind="backend" data-node-sublabel="dotnet CLI → EN-строки" data-node-context="Конвейер (Python + C#) › Извлечь">
-          <title>C# Extract · dotnet CLI → EN-строки · Конвейер (Python + C#) › Извлечь</title>
-          <rect x="163" y="220" width="140" height="52" rx="6" class="c-mask"/>
-          <rect x="163" y="220" width="140" height="52" rx="6" class="c-backend" data-animate="node" style="--step:1" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(169 226) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
-          </g>
-          <text data-node-label="" x="233" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">C# Extract</text>
-          <text x="233" y="258" class="t-muted" font-size="8" text-anchor="middle">dotnet CLI → EN-строки</text>
-        </g>
-
-        <g id="node-prefilter" data-node-id="prefilter" data-node-label="Prefilter" tabindex="0" role="button" aria-label="Focus Prefilter, dict + game.po + кэш, Конвейер (Python + C#) › Перевести" aria-pressed="false" data-node-kind="security" data-node-sublabel="dict + game.po + кэш" data-node-tag="режет ~95%" data-node-context="Конвейер (Python + C#) › Перевести">
-          <title>Prefilter · dict + game.po + кэш · Конвейер (Python + C#) › Перевести · режет ~95%</title>
-          <rect x="364.2" y="212" width="150" height="68" rx="6" class="c-mask"/>
-          <rect x="364.2" y="212" width="150" height="68" rx="6" class="c-security" data-animate="node" style="--step:2" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(370.2 218) scale(0.6875)">
-            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
-            <path d="m5.8 8 1.5 1.5 3-3"/>
-          </g>
-          <text data-node-label="" x="439.2" y="233" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Prefilter</text>
-          <text x="439.2" y="250" class="t-muted" font-size="8" text-anchor="middle">dict + game.po + кэш</text>
-        <text x="439.2" y="268" class="t-security" font-size="7" text-anchor="middle">режет ~95%</text>
-        </g>
-
-        <g id="node-llm" data-node-id="llm" data-node-label="LLM" tabindex="0" role="button" aria-label="Focus LLM, qwen / любая OpenAI-, Конвейер (Python + C#) › Перевести" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="qwen / любая OpenAI-" data-node-context="Конвейер (Python + C#) › Перевести">
-          <title>LLM · qwen / любая OpenAI- · Конвейер (Python + C#) › Перевести</title>
-          <rect x="575.4" y="220" width="130" height="52" rx="6" class="c-mask"/>
-          <rect x="575.4" y="220" width="130" height="52" rx="6" class="c-cloud" data-animate="node" style="--step:3" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="cloud" class="semantic-sigil s-cloud" transform="translate(581.4 226) scale(0.6875)">
-            <path d="M4.3 12.5h7.3a2.4 2.4 0 0 0 .2-4.8 4 4 0 0 0-7.5-1.3A3.1 3.1 0 0 0 4.3 12.5Z"/>
-          </g>
-          <text data-node-label="" x="640.4" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">LLM</text>
-          <text x="640.4" y="258" class="t-muted" font-size="8" text-anchor="middle">qwen / любая OpenAI-</text>
-        </g>
-
-        <g id="node-apply" data-node-id="apply" data-node-label="C# Apply" tabindex="0" role="button" aria-label="Focus C# Apply, EN→RU → .mod, Конвейер (Python + C#) › Собрать" aria-pressed="false" data-node-kind="backend" data-node-sublabel="EN→RU → .mod" data-node-context="Конвейер (Python + C#) › Собрать">
-          <title>C# Apply · EN→RU → .mod · Конвейер (Python + C#) › Собрать</title>
-          <rect x="771.4" y="220" width="130" height="52" rx="6" class="c-mask"/>
-          <rect x="771.4" y="220" width="130" height="52" rx="6" class="c-backend" data-animate="node" style="--step:4" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(777.4 226) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
-          </g>
-          <text data-node-label="" x="836.4" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">C# Apply</text>
-          <text x="836.4" y="258" class="t-muted" font-size="8" text-anchor="middle">EN→RU → .mod</text>
-        </g>
-
-        <g id="node-entries" data-node-id="entries" data-node-label="entries.json" tabindex="0" role="button" aria-label="Focus entries.json, EN-строки мода, Хранилище (файлы / кэш) › Извлечь" aria-pressed="false" data-node-kind="database" data-node-sublabel="EN-строки мода" data-node-context="Хранилище (файлы / кэш) › Извлечь">
-          <title>entries.json · EN-строки мода · Хранилище (файлы / кэш) › Извлечь</title>
-          <rect x="163" y="346" width="140" height="52" rx="6" class="c-mask"/>
-          <rect x="163" y="346" width="140" height="52" rx="6" class="c-database" data-animate="node" style="--step:12" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(169 352) scale(0.6875)">
-            <ellipse cx="8" cy="4" rx="5" ry="2"/>
-            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
-          </g>
-          <text data-node-label="" x="233" y="367" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">entries.json</text>
-          <text x="233" y="384" class="t-muted" font-size="8" text-anchor="middle">EN-строки мода</text>
-        </g>
-
-        <g id="node-state" data-node-id="state" data-node-label="state/ кэш" tabindex="0" role="button" aria-label="Focus state/ кэш, готовое EN→RU, Хранилище (файлы / кэш) › Перевести" aria-pressed="false" data-node-kind="database" data-node-sublabel="готовое EN→RU" data-node-context="Хранилище (файлы / кэш) › Перевести">
-          <title>state/ кэш · готовое EN→RU · Хранилище (файлы / кэш) › Перевести</title>
-          <rect x="374.2" y="346" width="130" height="52" rx="6" class="c-mask"/>
-          <rect x="374.2" y="346" width="130" height="52" rx="6" class="c-database" data-animate="node" style="--step:12" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(380.2 352) scale(0.6875)">
-            <ellipse cx="8" cy="4" rx="5" ry="2"/>
-            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
-          </g>
-          <text data-node-label="" x="439.2" y="367" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">state/ кэш</text>
-          <text x="439.2" y="384" class="t-muted" font-size="8" text-anchor="middle">готовое EN→RU</text>
-        </g>
-
-        <g id="node-csv" data-node-id="csv" data-node-label="translate.csv" tabindex="0" role="button" aria-label="Focus translate.csv, правки в Excel, Хранилище (файлы / кэш) › Собрать" aria-pressed="false" data-node-kind="database" data-node-sublabel="правки в Excel" data-node-context="Хранилище (файлы / кэш) › Собрать">
-          <title>translate.csv · правки в Excel · Хранилище (файлы / кэш) › Собрать</title>
-          <rect x="762.4" y="346" width="148" height="52" rx="6" class="c-mask"/>
-          <rect x="762.4" y="346" width="148" height="52" rx="6" class="c-database" data-animate="node" style="--step:12" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(768.4 352) scale(0.6875)">
-            <ellipse cx="8" cy="4" rx="5" ry="2"/>
-            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
-          </g>
-          <text data-node-label="" x="836.4" y="367" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">translate.csv</text>
-          <text x="836.4" y="384" class="t-muted" font-size="8" text-anchor="middle">правки в Excel</text>
-        </g>
-
-        <g id="node-final_mod" data-node-id="final_mod" data-node-label=".mod (RU)" tabindex="0" role="button" aria-label="Focus .mod (RU), in-place в Workshop, Результат › Собрать" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="in-place в Workshop" data-node-context="Результат › Собрать">
-          <title>.mod (RU) · in-place в Workshop · Результат › Собрать</title>
-          <rect x="891.4" y="472" width="130" height="52" rx="6" class="c-mask"/>
-          <rect x="891.4" y="472" width="130" height="52" rx="6" class="c-frontend" data-animate="node" style="--step:5" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(897.4 478) scale(0.6875)">
+        <g id="node-search" data-node-id="search" data-node-label="Поиск" tabindex="0" role="button" aria-label="Focus Поиск, 7 слоёв, Вход / запуск › Ввод" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="7 слоёв" data-node-context="Вход / запуск › Ввод">
+          <title>Поиск · 7 слоёв · Вход / запуск › Ввод</title>
+          <rect x="48" y="93" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="48" y="93" width="150" height="52" rx="6" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(54 99) scale(0.6875)">
             <rect x="2" y="3" width="12" height="10" rx="2"/>
             <path d="M2 6.5h12"/>
             <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
             <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
           </g>
-          <text data-node-label="" x="956.4" y="493" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">.mod (RU)</text>
-          <text x="956.4" y="510" class="t-muted" font-size="8" text-anchor="middle">in-place в Workshop</text>
+          <text data-node-label="" x="123" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Поиск</text>
+          <text x="123" y="131" class="t-muted" font-size="8" text-anchor="middle">7 слоёв</text>
+        </g>
+
+        <g id="node-user" data-node-id="user" data-node-label="Запуск" tabindex="0" role="button" aria-label="Focus Запуск, bat + CLI, Вход / запуск › Перевод" aria-pressed="false" data-node-kind="external" data-node-sublabel="bat + CLI" data-node-context="Вход / запуск › Перевод">
+          <title>Запуск · bat + CLI · Вход / запуск › Перевод</title>
+          <rect x="226" y="93" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="226" y="93" width="150" height="52" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(232 99) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" x="301" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Запуск</text>
+          <text x="301" y="131" class="t-muted" font-size="8" text-anchor="middle">bat + CLI</text>
+        </g>
+
+        <g id="node-probe" data-node-id="probe" data-node-label="Проба" tabindex="0" role="button" aria-label="Focus Проба, сервер жив?, Конвейер (Python + C#) › Ввод" aria-pressed="false" data-node-kind="security" data-node-sublabel="сервер жив?" data-node-context="Конвейер (Python + C#) › Ввод">
+          <title>Проба · сервер жив? · Конвейер (Python + C#) › Ввод</title>
+          <rect x="48" y="217" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="48" y="217" width="150" height="52" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(54 223) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" x="123" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Проба</text>
+          <text x="123" y="255" class="t-muted" font-size="8" text-anchor="middle">сервер жив?</text>
+        </g>
+
+        <g id="node-extract" data-node-id="extract" data-node-label="Извлечь" tabindex="0" role="button" aria-label="Focus Извлечь, C# → EN, Конвейер (Python + C#) › Перевод" aria-pressed="false" data-node-kind="backend" data-node-sublabel="C# → EN" data-node-context="Конвейер (Python + C#) › Перевод">
+          <title>Извлечь · C# → EN · Конвейер (Python + C#) › Перевод</title>
+          <rect x="226" y="217" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="226" y="217" width="150" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(232 223) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" x="301" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Извлечь</text>
+          <text x="301" y="255" class="t-muted" font-size="8" text-anchor="middle">C# → EN</text>
+        </g>
+
+        <g id="node-prefilter" data-node-id="prefilter" data-node-label="Prefilter" tabindex="0" role="button" aria-label="Focus Prefilter, сложные, Конвейер (Python + C#) › Перевод" aria-pressed="false" data-node-kind="backend" data-node-sublabel="сложные" data-node-context="Конвейер (Python + C#) › Перевод">
+          <title>Prefilter · сложные · Конвейер (Python + C#) › Перевод</title>
+          <rect x="404" y="217" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="404" y="217" width="150" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(410 223) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" x="479" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Prefilter</text>
+          <text x="479" y="255" class="t-muted" font-size="8" text-anchor="middle">сложные</text>
+        </g>
+
+        <g id="node-apply" data-node-id="apply" data-node-label="Собрать" tabindex="0" role="button" aria-label="Focus Собрать, C# → .mod, Конвейер (Python + C#) › Сборка" aria-pressed="false" data-node-kind="backend" data-node-sublabel="C# → .mod" data-node-context="Конвейер (Python + C#) › Сборка">
+          <title>Собрать · C# → .mod · Конвейер (Python + C#) › Сборка</title>
+          <rect x="562" y="217" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="562" y="217" width="150" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(568 223) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" x="637" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Собрать</text>
+          <text x="637" y="255" class="t-muted" font-size="8" text-anchor="middle">C# → .mod</text>
+        </g>
+
+        <g id="node-csv" data-node-id="csv" data-node-label="CSV" tabindex="0" role="button" aria-label="Focus CSV, Excel, Конвейер (Python + C#) › Сборка" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="Excel" data-node-context="Конвейер (Python + C#) › Сборка">
+          <title>CSV · Excel · Конвейер (Python + C#) › Сборка</title>
+          <rect x="758.8" y="217" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="758.8" y="217" width="150" height="52" rx="6" class="c-messagebus" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(764.8 223) scale(0.6875)">
+            <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>
+            <circle cx="5" cy="4.5" r="1" class="sigil-fill"/>
+            <circle cx="10.5" cy="8" r="1" class="sigil-fill"/>
+            <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" x="833.8" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">CSV</text>
+          <text x="833.8" y="255" class="t-muted" font-size="8" text-anchor="middle">Excel</text>
+        </g>
+
+        <g id="node-cache" data-node-id="cache" data-node-label="Кэш" tabindex="0" role="button" aria-label="Focus Кэш, state/ (кэш), ИИ / хранилище (кэш и словари) › Перевод" aria-pressed="false" data-node-kind="database" data-node-sublabel="state/ (кэш)" data-node-context="ИИ / хранилище (кэш и словари) › Перевод">
+          <title>Кэш · state/ (кэш) · ИИ / хранилище (кэш и словари) › Перевод</title>
+          <rect x="226" y="341" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="226" y="341" width="150" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(232 347) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" x="301" y="362" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Кэш</text>
+          <text x="301" y="379" class="t-muted" font-size="8" text-anchor="middle">state/ (кэш)</text>
+        </g>
+
+        <g id="node-dict" data-node-id="dict" data-node-label="Словари" tabindex="0" role="button" aria-label="Focus Словари, dict.json, ИИ / хранилище (кэш и словари) › Перевод" aria-pressed="false" data-node-kind="database" data-node-sublabel="dict.json" data-node-context="ИИ / хранилище (кэш и словари) › Перевод">
+          <title>Словари · dict.json · ИИ / хранилище (кэш и словари) › Перевод</title>
+          <rect x="404" y="341" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="404" y="341" width="150" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(410 347) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" x="479" y="362" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Словари</text>
+          <text x="479" y="379" class="t-muted" font-size="8" text-anchor="middle">dict.json</text>
+        </g>
+
+        <g id="node-llm" data-node-id="llm" data-node-label="LLM" tabindex="0" role="button" aria-label="Focus LLM, OpenAI -&gt; RU, ИИ / хранилище (кэш и словари) › Сборка" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="OpenAI -&gt; RU" data-node-context="ИИ / хранилище (кэш и словари) › Сборка">
+          <title>LLM · OpenAI -&gt; RU · ИИ / хранилище (кэш и словари) › Сборка</title>
+          <rect x="562" y="341" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="562" y="341" width="150" height="52" rx="6" class="c-cloud" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="cloud" class="semantic-sigil s-cloud" transform="translate(568 347) scale(0.6875)">
+            <path d="M4.3 12.5h7.3a2.4 2.4 0 0 0 .2-4.8 4 4 0 0 0-7.5-1.3A3.1 3.1 0 0 0 4.3 12.5Z"/>
+          </g>
+          <text data-node-label="" x="637" y="362" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">LLM</text>
+          <text x="637" y="379" class="t-muted" font-size="8" text-anchor="middle">OpenAI -&gt; RU</text>
+        </g>
+
+        <g id="node-mod_ru" data-node-id="mod_ru" data-node-label=".mod RU" tabindex="0" role="button" aria-label="Focus .mod RU, в игре, Результат › Сборка" aria-pressed="false" data-node-kind="database" data-node-sublabel="в игре" data-node-context="Результат › Сборка">
+          <title>.mod RU · в игре · Результат › Сборка</title>
+          <rect x="758.8" y="465" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="758.8" y="465" width="150" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(764.8 471) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" x="833.8" y="486" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">.mod RU</text>
+          <text x="833.8" y="503" class="t-muted" font-size="8" text-anchor="middle">в игре</text>
         </g>
 
         <!-- Edge labels -->
-        <g data-edge-from="apply" data-edge-to="csv" data-edge-label="export" data-edge-key="0" data-edge-id="ap-csv">
-          <rect x="952.3000000000001" y="226" width="38.8" height="14" rx="3" class="c-mask"/>
-          <text x="971.7" y="236" class="t-database" font-size="8" text-anchor="middle">export</text>
+        <g data-edge-from="apply" data-edge-to="csv" data-edge-label="export" data-edge-key="0" data-edge-id="e-apply-csv">
+          <rect x="716" y="223" width="38.8" height="14" rx="3" class="c-mask"/>
+          <text x="735.4" y="233" class="t-backend" font-size="8" text-anchor="middle">export</text>
         </g>
-        <g data-edge-from="apply" data-edge-to="final_mod" data-edge-label="write .mod" data-edge-key="1" data-edge-id="ap-fm">
-          <rect x="826.9" y="532" width="58" height="14" rx="3" class="c-mask"/>
-          <text x="855.9" y="542" class="t-backend" font-size="8" text-anchor="middle">write .mod</text>
+        <g data-edge-from="csv" data-edge-to="mod_ru" data-edge-label="apply" data-edge-key="1" data-edge-id="e-csv-mod">
+          <rect x="949.4" y="223" width="34" height="14" rx="3" class="c-mask"/>
+          <text x="966.4" y="233" class="t-backend" font-size="8" text-anchor="middle">apply</text>
         </g>
-        <g data-edge-from="csv" data-edge-to="apply" data-edge-label="import (пересборка)" data-edge-key="2" data-edge-id="csv-ap">
-          <rect x="792.8" y="326" width="101.2" height="14" rx="3" class="c-mask"/>
-          <text x="843.4" y="336" class="t-database" font-size="8" text-anchor="middle">import (пересборка)</text>
+
+        <g data-edge-from="llm" data-edge-to="apply" data-edge-label="пере-вёл" data-edge-key="3" data-edge-id="e-llm-apply">
+          <rect x="658.3" y="270" width="48.4" height="14" rx="3" class="c-mask"/>
+          <text x="682.5" y="280" class="t-backend" font-size="8" text-anchor="middle">пере-вёл</text>
         </g>
-        <g data-edge-from="extract" data-edge-to="entries" data-edge-label="запись EN" data-edge-key="3" data-edge-id="ex-ent">
-          <rect x="64.9" y="233" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
-          <text x="91.5" y="243" class="t-database" font-size="8" text-anchor="middle">запись EN</text>
+        <g data-edge-from="prefilter" data-edge-to="cache" data-edge-label="кэш-хит" data-edge-key="4" data-edge-id="e-pref-cache">
+          <rect x="361.2" y="270" width="43.6" height="14" rx="3" class="c-mask"/>
+          <text x="383" y="280" class="t-database" font-size="8" text-anchor="middle">кэш-хит</text>
         </g>
-        <g data-edge-from="extract" data-edge-to="prefilter" data-edge-label="EN-строки" data-edge-key="4" data-edge-id="ex-pf">
-          <rect x="307" y="226" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
-          <text x="333.6" y="236" class="t-muted" font-size="8" text-anchor="middle">EN-строки</text>
+        <g data-edge-from="prefilter" data-edge-to="dict" data-edge-label="lookup" data-edge-key="5" data-edge-id="e-pref-dict">
+          <rect x="414.1" y="270" width="38.8" height="14" rx="3" class="c-mask"/>
+          <text x="433.5" y="280" class="t-database" font-size="8" text-anchor="middle">lookup</text>
         </g>
-        <g data-edge-from="final_mod" data-edge-to="game" data-edge-label="запуск" data-edge-key="5" data-edge-id="fm-game">
-          <rect x="1014.4" y="100" width="38.8" height="14" rx="3" class="c-mask"/>
-          <text x="1033.8" y="110" class="t-muted" font-size="8" text-anchor="middle">запуск</text>
+        <g data-edge-from="prefilter" data-edge-to="llm" data-edge-label="miss" data-edge-key="6" data-edge-id="e-pref-llm">
+          <rect x="546.5" y="270" width="30" height="14" rx="3" class="c-mask"/>
+          <text x="561.5" y="280" class="t-backend" font-size="8" text-anchor="middle">miss</text>
         </g>
-        <g data-edge-from="llm" data-edge-to="apply" data-edge-label="RU-перевод" data-edge-key="6" data-edge-id="llm-ap">
-          <rect x="709.4" y="184" width="58" height="14" rx="3" class="c-mask"/>
-          <text x="738.4" y="194" class="t-backend" font-size="8" text-anchor="middle">RU-перевод</text>
-        </g>
-        <g data-edge-from="prefilter" data-edge-to="llm" data-edge-label="нужен LLM" data-edge-key="7" data-edge-id="pf-llm">
-          <rect x="518.1999999999999" y="226" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
-          <text x="544.8" y="236" class="t-backend" font-size="8" text-anchor="middle">нужен LLM</text>
-        </g>
-        <g data-edge-from="prefilter" data-edge-to="state" data-edge-label="lookup (кэш)" data-edge-key="8" data-edge-id="pf-st">
-          <rect x="450.90000000000003" y="406" width="67.6" height="14" rx="3" class="c-mask"/>
-          <text x="484.70000000000005" y="416" class="t-database" font-size="8" text-anchor="middle">lookup (кэш)</text>
-        </g>
-        <g data-edge-from="workshop" data-edge-to="extract" data-edge-label="extract" data-edge-key="9" data-edge-id="w-ex">
-          <rect x="183.7" y="100" width="43.6" height="14" rx="3" class="c-mask"/>
-          <text x="205.5" y="110" class="t-muted" font-size="8" text-anchor="middle">extract</text>
+
+
+        <g data-edge-from="user" data-edge-to="probe" data-edge-label="bat" data-edge-key="9" data-edge-id="e-user-probe">
+          <rect x="151.5" y="146" width="30" height="14" rx="3" class="c-mask"/>
+          <text x="166.5" y="156" class="t-muted" font-size="8" text-anchor="middle">bat</text>
         </g>
 
         <!-- Legend -->
         <g data-legend="">
-          <text x="20" y="560" class="t-primary" font-size="12" font-weight="650">Legend</text>
-          <g data-legend-semantic-kind="frontend" data-legend-x="20" data-legend-baseline="580" data-legend-width="74">
-            <rect x="20" y="572" width="14" height="9" rx="2" class="c-frontend" stroke-width="1"/>
-            <text x="42" y="580" class="t-muted" font-size="7.5" font-weight="500">User UI</text>
+          <text x="20" y="552" class="t-primary" font-size="12" font-weight="650">Legend</text>
+          <g data-legend-semantic-kind="frontend" data-legend-x="20" data-legend-baseline="572" data-legend-width="61">
+            <rect x="20" y="564" width="14" height="9" rx="2" class="c-frontend" stroke-width="1"/>
+            <text x="42" y="572" class="t-muted" font-size="7.5" font-weight="500">Вход</text>
           </g>
-          <g data-legend-semantic-kind="backend" data-legend-x="101" data-legend-baseline="580" data-legend-width="91">
-            <rect x="101" y="572" width="14" height="9" rx="2" class="c-backend" stroke-width="1"/>
-            <text x="123" y="580" class="t-muted" font-size="7.5" font-weight="500">Agent logic</text>
+          <g data-legend-semantic-kind="backend" data-legend-x="88" data-legend-baseline="572" data-legend-width="78">
+            <rect x="88" y="564" width="14" height="9" rx="2" class="c-backend" stroke-width="1"/>
+            <text x="110" y="572" class="t-muted" font-size="7.5" font-weight="500">Конвейер</text>
           </g>
-          <g data-legend-semantic-kind="security" data-legend-x="199" data-legend-baseline="580" data-legend-width="70">
-            <rect x="199" y="572" width="14" height="9" rx="2" class="c-security" stroke-width="1"/>
-            <text x="221" y="580" class="t-muted" font-size="7.5" font-weight="500">Policy</text>
+          <g data-legend-semantic-kind="security" data-legend-x="173" data-legend-baseline="572" data-legend-width="70">
+            <rect x="173" y="564" width="14" height="9" rx="2" class="c-security" stroke-width="1"/>
+            <text x="195" y="572" class="t-muted" font-size="7.5" font-weight="500">Защита</text>
           </g>
-          <g data-legend-semantic-kind="database" data-legend-x="276" data-legend-baseline="580" data-legend-width="109">
-            <rect x="276" y="572" width="14" height="9" rx="2" class="c-database" stroke-width="1"/>
-            <text x="298" y="580" class="t-muted" font-size="7.5" font-weight="500">Context / trace</text>
+          <g data-legend-semantic-kind="messagebus" data-legend-x="250" data-legend-baseline="572" data-legend-width="57">
+            <rect x="250" y="564" width="14" height="9" rx="2" class="c-messagebus" stroke-width="1"/>
+            <text x="272" y="572" class="t-muted" font-size="7.5" font-weight="500">CSV</text>
           </g>
-          <g data-legend-semantic-kind="cloud" data-legend-x="392" data-legend-baseline="580" data-legend-width="100">
-            <rect x="392" y="572" width="14" height="9" rx="2" class="c-cloud" stroke-width="1"/>
-            <text x="414" y="580" class="t-muted" font-size="7.5" font-weight="500">Cloud service</text>
+          <g data-legend-semantic-kind="database" data-legend-x="314" data-legend-baseline="572" data-legend-width="83">
+            <rect x="314" y="564" width="14" height="9" rx="2" class="c-database" stroke-width="1"/>
+            <text x="336" y="572" class="t-muted" font-size="7.5" font-weight="500">Хранилище</text>
           </g>
-          <g data-legend-semantic-kind="external" data-legend-x="499" data-legend-baseline="580" data-legend-width="109">
-            <rect x="499" y="572" width="14" height="9" rx="2" class="c-external" stroke-width="1"/>
-            <text x="521" y="580" class="t-muted" font-size="7.5" font-weight="500">External system</text>
+          <g data-legend-semantic-kind="cloud" data-legend-x="404" data-legend-baseline="572" data-legend-width="52">
+            <rect x="404" y="564" width="14" height="9" rx="2" class="c-cloud" stroke-width="1"/>
+            <text x="426" y="572" class="t-muted" font-size="7.5" font-weight="500">ИИ</text>
+          </g>
+          <g data-legend-semantic-kind="external" data-legend-x="463" data-legend-baseline="572" data-legend-width="96">
+            <rect x="463" y="564" width="14" height="9" rx="2" class="c-external" stroke-width="1"/>
+            <text x="485" y="572" class="t-muted" font-size="7.5" font-weight="500">Пользователь</text>
           </g>
         </g>
       </svg>
