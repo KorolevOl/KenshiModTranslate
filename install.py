@@ -133,7 +133,7 @@ def _has_desktop9(exe):
 
 
 def _install_dotnet_local():
-    """Устанавливает .NET 9 Desktop Runtime в <проект>\dotnet-local — без админ-прав.
+    r"""Устанавливает .NET 9 Desktop Runtime в <проект>\dotnet-local — без админ-прав.
 
     Использует официальный скрипт dotnet.microsoft.com (dotnet-install.ps1),
     загружая его в файл и вызывая с параметрами как -File (а не iex)."""
@@ -177,6 +177,7 @@ def _install_dotnet_local():
 
 
 def step_dotnet(apply=True):
+    global _global_dotnet_path
     print("\n[2/4] .NET 9 Desktop Runtime")
     dotnet, source = _find_dotnet()
     if not dotnet and apply:
