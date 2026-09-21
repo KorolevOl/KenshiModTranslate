@@ -2,6 +2,12 @@
 """Воспроизвести 'эхо 353/416' на NewRecruits: первые 416 строк, effort=none.
 Считаю НЕСТРОГОЕ en==ru и валидаторный echo. Смотрю, что реально не переведено."""
 import json, re, time, urllib.request
+
+# --- injected by move_to_dev: let us import core modules from parent ---
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+# --- end injected prologue ---
+
 from validate_translation import classify_row
 
 strs = json.load(open('state/8e39195cb736_entries.json', encoding='utf-8'))

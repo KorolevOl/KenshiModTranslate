@@ -13,6 +13,12 @@ dry-run: показывает, что будет — с кэшами не тро
 """
 import sys, os, json, re, shutil, subprocess, struct
 sys.path.insert(0, 'H:/KenshiModTranslate')
+
+# --- injected by move_to_dev: let us import core modules from parent ---
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+# --- end injected prologue ---
+
 import translate_mods as TM
 import importlib
 importlib.reload(TM)

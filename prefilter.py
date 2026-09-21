@@ -174,12 +174,70 @@ class ReusePool:
 
 
 _default_pool = None
+_POOL_CACHE_SUFFIX = "_reuse_pool_cache.json"
+
+
+def _pool_fingerprint(state_dir, dict_path, po_paths):
+    """Stable fingerprint of ALL pool inputs = max mtime across them.
+
+    The pool is a pure function of (state files, dict.json, .po files). If the
+    max mtime of those is unchanged since a cache was written, the cached pool
+    is byte-for-byte still correct and we can skip re-reading 500+ JSON files.
+    Returns a string, or None when there is no cacheable source at all.
+    """
+    ts = []
+    if state_dir and os.path.isdir(state_dir):
+        for f in (glob.glob(os.path.join(state_dir, "*_entries.json"))
+                  + glob.glob(os.path.join(state_dir, "*_mapping.json"))):
+            try:
+                ts.append(os.path.getmtime(f))
+            except OSError:
+                pass
+    if dict_path and os.path.isfile(dict_path):
+        ts.append(os.path.getmtime(dict_path))
+    for p in (po_paths or []):
+        if p and os.path.isfile(p):
+            ts.append(os.path.getmtime(p))
+    return ("%.6f" % max(ts)) if ts else None
+
+
+def _pool_cache_file(state_dir):
+    return os.path.join(state_dir, _POOL_CACHE_SUFFIX) if state_dir else None
+
 
 def configure(dict_path=None, po_paths=None, state_dir=None):
-    """Build (or rebuild) the default reuse pool. Returns the pool."""
+    """Build (or rebuild) the default reuse pool. Returns the pool.
+
+    Memoized: the built pool is cached in <state_dir>/_reuse_pool_cache.json
+    keyed by a fingerprint of every input. A later run with unchanged inputs
+    loads the cache instead of re-reading the whole state/ tree (223+ mods).
+    Cache is best-effort — any read/write failure falls through to a fresh build.
+    """
     global _default_pool
-    _default_pool = ReusePool.build(dict_path, po_paths, state_dir)
-    return _default_pool
+    cache_file = _pool_cache_file(state_dir)
+    fp = _pool_fingerprint(state_dir, dict_path, po_paths)
+    if cache_file and fp and os.path.isfile(cache_file):
+        try:
+            c = json.load(open(cache_file, encoding="utf-8"))
+            if c.get("fingerprint") == fp and isinstance(c.get("map"), dict):
+                pool = ReusePool()
+                pool._map = {k: (v[0], v[1]) for k, v in c["map"].items()}
+                _default_pool = pool
+                return pool
+        except Exception:
+            pass  # stale/corrupt cache -> rebuild below
+    pool = ReusePool.build(dict_path, po_paths, state_dir)
+    if cache_file and fp:
+        try:
+            os.makedirs(state_dir, exist_ok=True)
+            tmp = cache_file + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"fingerprint": fp, "map": pool._map}, f)
+            os.replace(tmp, cache_file)
+        except Exception:
+            pass  # never fail the build over a cache write
+    _default_pool = pool
+    return pool
 
 def lookup(en):
     """Reuse an existing translation if the EN string matches exactly, else

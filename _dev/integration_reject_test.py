@@ -4,6 +4,12 @@ sys.path.insert(0, r"H:\KenshiModTranslate")
 os.chdir(r"H:\KenshiModTranslate")
 ctx = sys.argv
 
+
+# --- injected by move_to_dev: let us import core modules from parent ---
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+# --- end injected prologue ---
+
 import translate_mods as t
 
 t.log = lambda m: print("  LOG:", m)

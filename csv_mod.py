@@ -94,10 +94,6 @@ def csv_read_path(tgt_dir, target):
     if os.path.isfile(old):
         return old
     return new
-    if os.path.isfile(old):
-        # чтение (import) — используем старый, чтобы не потерять правки
-        return old
-    return new  # запись (export) — по новому имени
 
 def import_csv(tgt_dir, entries, mfile, target, log):
     TM = _tm()

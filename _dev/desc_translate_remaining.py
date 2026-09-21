@@ -5,6 +5,12 @@ TM.llm_call ([кусок1, кусок2, ...] -> [RU1, RU2, ...]) — battle-test
 """
 import sys, os, json, importlib, re, time
 sys.path.insert(0, 'H:/KenshiModTranslate')
+
+# --- injected by move_to_dev: let us import core modules from parent ---
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+# --- end injected prologue ---
+
 import translate_mods as TM, validate_translation as V
 importlib.reload(TM); importlib.reload(V)
 import verify_translations as VT; importlib.reload(VT)

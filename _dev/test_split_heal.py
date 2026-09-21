@@ -3,6 +3,12 @@
 «empty content», половинки сдают. Проверяю, что рекурсия доходит до конца
 и все строки попали в done_map."""
 import unittest.mock as mock
+
+# --- injected by move_to_dev: let us import core modules from parent ---
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+# --- end injected prologue ---
+
 import translate_mods as TM
 
 # создаём 350 фейковых энтри

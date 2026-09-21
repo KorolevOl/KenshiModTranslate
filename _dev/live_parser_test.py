@@ -2,6 +2,12 @@
 """Прогон нового llm_call (strip_md + точный len + split) на чанке 350 строк,
 который в живом ране упал с 'empty content'. 3 попытки, меряем расход."""
 import json, time
+
+# --- injected by move_to_dev: let us import core modules from parent ---
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+# --- end injected prologue ---
+
 import translate_mods as TM
 
 strs = json.load(open('T:/test_350.json', 'r', encoding='utf-8'))

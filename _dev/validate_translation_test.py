@@ -2,6 +2,12 @@
 
 Запуск:  python validate_translation_test.py
 """
+
+# --- injected by move_to_dev: let us import core modules from parent ---
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+# --- end injected prologue ---
+
 import validate_translation as v
 
 CASES = [
