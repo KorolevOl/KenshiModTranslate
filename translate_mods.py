@@ -96,6 +96,7 @@ HTTP_TO    = int(L.get("http_timeout_s", 240))
 RETRIES    = int(T.get("http_retries", 3))
 FORCE      = bool(T.get("force_retranslate", False)) or "--force" in sys.argv
 NO_CACHE   = os.environ.get("KENSHI_NO_CACHE") == "1"
+NO_LLM     = bool(T.get("no_llm", False)) or "--no-llm" in sys.argv  # 2026-09-21: только CSV, без LLM
 
 # Thinking (reasoning) off — the same mechanism as Hermes Agent (extra_body →
 # chat_template_kwargs). Token-neutral: model spends no budget on reasoning,
@@ -951,6 +952,34 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None):
         if done:
             log(f"  resume: {len(done)}/{len(entries)} уже готово")
     CUR["mapref"] = done
+    # 2026-09-21: --no-llm — режим «только CSV»: извлекаем строки, заполняем
+    # доступное из кеша/prefilter (локально, 0 LLM) и пишем <имя>.translate.csv
+    # — пользователь переводит сам (Excel), потом assemble_mod.bat. НЕ применяем.
+    if NO_LLM:
+        if PRE_FILTER_ENABLED:
+            reused = 0
+            for e in entries:
+                if str(e["i"]) in done and (done[str(e["i"])] or ""):
+                    continue
+                en = e.get("original") or ""
+                if not en or prefilter.nothing_to_translate(en):
+                    continue
+                ru, _src = prefilter.lookup(en)
+                if ru and str(ru).strip():
+                    done[str(e["i"])] = ru
+                    reused += 1
+            if reused:
+                log(f"  [no-llm] prefill из локальных источников: {reused} строк")
+        filled = sum(1 for v in done.values() if v and str(v).strip())
+        try:
+            export_mod_csv(target, entries, done)
+            log(f"  [no-llm] CSV готов: {os.path.basename(target)[:-4]}.translate.csv "
+                f"({filled}/{len(entries)} заполнено из кеша — остальное пусто, переведи сам)")
+            log(f"  [no-llm] после правки: assemble_mod.bat \"{name}\"")
+        except Exception as ex:
+            log(f"  [no-llm/csv] не смог записать: {ex}")
+            return False
+        return True
     if len(done) < len(entries):
         ctx["nmods_done"] = index - 1
         translate_entries(entries, done, name, ctx)
@@ -1055,6 +1084,8 @@ def main():
     global INCLUDE_EXCLUDED
     if "--force" in sys.argv:
         sys.argv.remove("--force")
+    if "--no-llm" in sys.argv:
+        sys.argv.remove("--no-llm")
     if "--include-excluded" in sys.argv:
         sys.argv.remove("--include-excluded")
         INCLUDE_EXCLUDED = True
@@ -1170,6 +1201,46 @@ def main():
     need_llm = sum(1 for m in mods if not _cache_filled(m))
     if need_llm:
         log(f"  (первый запуск: {need_llm} мод(ов) нужны LLM, {len(mods)-need_llm} из кеша)")
+
+    # 2026-09-21: PROBE LLM-сервера ДО старта. Если LLM нужен (есть недоделанные
+    # строки) и сервер из config.json недоступен — не сжигать время на ретраи,
+    # а сразу сказать пользователю и предложить --no-llm (только CSV, без ИИ).
+    if need_llm and not NO_LLM:
+        import urllib.request, urllib.error
+        # Пробуем GET <base>/models: живой сервер ОТВЕТИТ (2xx/4xx),
+        # мёртвый — ConnectionRefused/timeout. Любой HTTP-ответ = сервер жив.
+        probe_target = LLM_BASE.rstrip("/") + "/models"
+        down = False
+        err = ""
+        try:
+            headers = {"Accept": "application/json"}
+            if LLM_KEY:
+                headers["Authorization"] = "Bearer " + LLM_KEY
+            req = urllib.request.Request(probe_target, headers=headers)
+            with urllib.request.urlopen(req, timeout=8) as r:
+                pass  # 2xx — сервер жив
+        except urllib.error.HTTPError as he:
+            err = f"HTTP {he.code} (сервер отвечает — продолжаю)"  # жив, просто нет /models или нет ключа
+        except Exception as ex:
+            down = True
+            err = str(ex)
+        if down:
+            log(f"\n[!] LLM-сервер НЕДОСТУПЕН: {LLM_BASE}  ({err})")
+            log(f"    model: {LLM_MODEL}")
+            log(f"    Без ИИ нечем переводить — {need_llm} мод(ов) ждут перевода.")
+            try:
+                ans = input("    Продолжить в режиме --no-llm (только CSV, переведёшь сам)? [y/N]: ").strip().lower()
+            except EOFError:
+                ans = "y"
+            if ans in ("y", "д", "да", "yes"):
+                globals()["NO_LLM"] = True
+                log("    -> переключаюсь на --no-llm: создам только CSV-файлы (0 запросов к LLM)")
+            else:
+                log("    прерываю. Запусти: translate_mods.bat --no-llm <моды>  (или подними LLM-сервер)")
+                return 1
+        elif err:
+            log(f"  (LLM-проба: {err})")
+
 
     # Enter Progress context (two tqdm bars live here)
     with Progress(len(mods)) as PR:

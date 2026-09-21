@@ -40,7 +40,7 @@ install.bat
 **Шаг 3. Переводить.** Двойной клик по:
 
 ```
-translate_mods.bat
+./translate_mods.bat
 ```
 
 Прогресс-бары ALL/NOW (счётчик — в токенах). `Ctrl+C` останавливает без потери
@@ -52,20 +52,21 @@ translate_mods.bat
 
 | Что хотите | Что запустить (двойной клик) |
 |---|---|
-| Перевести все моды | `translate_mods.bat` |
-| Только один мод | `translate_mods.bat "имя мода"` |
-| Пере-перевести заново (игнорируя кеш) | `translate_mods.bat --force "имя мода"` |
-| Посмотреть/поправить перевод | файл `<имя-мода>.translate.csv` в папке мода (Excel) → сохранить → `assemble_mod.bat "имя мода"` |
-| Пересобрать все `.mod` из кеша (без ИИ) | `rebuild.bat` |
-| Проверить качество / починить | `verify_translations.bat`, `fix_translations.bat "имя мода"` |
-| Убрать мод из кеша | `verify_translations.bat --purge "имя мода"` |
+| Перевести все моды | `./translate_mods.bat` |
+| Только один мод | `./translate_mods.bat "имя мода"` |
+| Пере-перевести заново (игнорируя кеш) | `./translate_mods.bat --force "имя мода"` |
+| Только создать CSV для ручного перевода (без ИИ) | `./translate_mods.bat --no-llm "имя мода"` |
+| Посмотреть/поправить перевод | файл `<имя-мода>.translate.csv` в папке мода (Excel) → сохранить → `./assemble_mod.bat "имя мода"` |
+| Пересобрать все `.mod` из кеша (без ИИ) | `./rebuild.bat` |
+| Проверить качество / починить | `./verify_translations.bat`, `./fix_translations.bat "имя мода"` |
+| Убрать мод из кеша | `./verify_translations.bat --purge "имя мода"` |
 | Найти, где во всех модах И В ФАЙЛАХ ИГРЫ лежит фраза (реализация поиска по `kenshi\data\*.mod`, `kenshi\mods\<мод>`, `.po`), затем выбрать номера и запустить перевод | `search_mods.py "фраза"` → вводишь номера → перевод запускается |
 
 **`<имя-мода>.translate.csv`** — Excel-таблица мода (названа по имени `.mod`-файла:
 `Pocket Change 2.0.mod` → `Pocket Change 2.0.translate.csv`): разделитель `|`, столбец 1 = оригинал
 («якорь», **не трогать**), столбец 2 = перевод (пусто = строка остаётся как была).
 
-**Полный цикл**: перевести → поправить CSV в Excel → `assemble_mod.bat` → игра.
+**Полный цикл**: перевести → поправить CSV в Excel → `./assemble_mod.bat` → игра.
 Откат: вернуть `имя.mod.prev` обратно в `имя.mod`.
 
 ---
@@ -89,10 +90,10 @@ translate_mods.bat
 | `python not found in PATH` | Установи Python 3.10+ и добавь в PATH |
 | `dotnet CLI failed` | .NET Desktop Runtime 9 не установлен, либо `bin\Release
 et9.0-windows\kenshi-modtranslate.dll` отсутствует (должна быть в репо) |
-| Ложный-мод / пустой кеш | `verify_translations.bat --details`, затем `--fix` |
-| Неверный порядок/потеря строк | `fix_translations.bat "имя"` — починит только битое |
-| Удалить кеш мода | `verify_translations.bat --purge "имя"` |
-| Перевести заново | `translate_mods.bat --force "имя"` (резервный остаётся) |
+| Ложный-мод / пустой кеш | `./verify_translations.bat --details`, затем `--fix` |
+| Неверный порядок/потеря строк | `./fix_translations.bat "имя"` — починит только битое |
+| Удалить кеш мода | `./verify_translations.bat --purge "имя"` |
+| Перевести заново | `./translate_mods.bat --force "имя"` (резервный остаётся) |
 
 ### Резервные копии (на месте, в папке мода)
 ```
@@ -106,7 +107,7 @@ et9.0-windows\kenshi-modtranslate.dll` отсутствует (должна бы
 
 ## 🔄 Полный цикл «сделал — поправил — собрал»
 
-1. `translate_mods.bat "Pocket Change 2.0"` — перевести (или уже переведено)
+1. `./translate_mods.bat "Pocket Change 2.0"` — перевести (или уже переведено)
 2. Посмотреть перевод: в игре или в `.../1173662576/<имя мода>.translate.csv` (открыть в Excel)
    — **если всё устраивает, останавливаемся здесь**. Остальные шаги не нужны.
 
@@ -115,7 +116,7 @@ et9.0-windows\kenshi-modtranslate.dll` отсутствует (должна бы
    > steamcommunity.com/shared/filedetails/**1173662576**), по нему названа папка
    > в Steam. В этой папке и лежит `<имя мода>.translate.csv`.
 3. (Только если что-то не так) Править 2‑ю колонку (RU) в `<имя мода>.translate.csv`, сохранить
-4. `assemble_mod.bat "Pocket Change 2.0"` — пересобрать .mod из CSV
+4. `./assemble_mod.bat "Pocket Change 2.0"` — пересобрать .mod из CSV
 5. Запустить игру снова
 
 Если что-то пошло не так — откат (переименовать файлы):
@@ -144,23 +145,23 @@ move -Force "Pocket Change 2.0.mod.prev" "Pocket Change 2.0.mod"
 
 ```
 # перевести
-translate_mods.bat "имя" | --force | --list-file f.txt | --include-excluded
+./translate_mods.bat "имя" | --force | --no-llm | --list-file f.txt | --include-excluded
 # выгрузить CSV
-export_mod_csv.bat "имя"
+./export_mod_csv.bat "имя"
 # пересобрать из CSV
-assemble_mod.bat "имя"
+./assemble_mod.bat "имя"
 # пересобрать ВСЕ из кеша (без LLM, без CSV)
-rebuild.bat | <Steam-ID> | <имя>
+./rebuild.bat | <Steam-ID> | <имя>
 # проверить
-verify_translations.bat [--details] [--fix] [--purge]
+./verify_translations.bat [--details] [--fix] [--purge]
 # поиск по МОДАМ И ФАЙЛАМ ИГРЫ (kenshi\data\*.mod, kenshi\mods\<мод>, .po)
-python search_mods.py "фраза"                       # поиск + список номеров
-python search_mods.py "фраза" --no-translate        # только поиск (без запуска)
-python search_mods.py "фраза" --yes                 # авто-«все номера»
-python search_mods.py "фраза" --force               # пере-перевести всё заново
-python search_mods.py "a" --ru                      # только RU-совпадения в кеше
+py .\search_mods.py "фраза"                      # поиск + список номеров
+py .\search_mods.py "фраза" --no-translate      # только поиск (без запуска)
+py .\search_mods.py "фраза" --yes               # авто-«все номера»
+py .\search_mods.py "фраза" --force             # пере-перевести всё заново
+py .\search_mods.py "a" --ru                     # только RU-совпадения в кеше
 # список доступных имён/ID
-python csv_mod.py --list
+py .\csv_mod.py --list
 ```
 
 ---
@@ -294,12 +295,12 @@ curl http://localhost:11234/v1/models
 
 ### Шаг 7. Самопроверка (без LLM, без переводов)
 ```
-verify_translations.bat
-python search_mods.py "test"
+./verify_translations.bat
+py .\search_mods.py "test"
 ```
 Если ничего не падает — можно переводить:
 ```
-translate_mods.bat "Pocket Change 2.0"
+./translate_mods.bat "Pocket Change 2.0"
 ```
 
 ### Шаг 8. Обновление проекта (когда появится новый релиз)
@@ -415,9 +416,9 @@ prefilter (reuse без LLM) и словарь работают как есть.
 ## 🚀 Запуск перевода
 
 ```
-translate_mods.bat                        # все моды (спросит [y/N])
-translate_mods.bat "Pocket Change 2.0"    # один мод по имени
-translate_mods.bat 1173662576             # один мод по **Steam-ID** (уникальный номер мода в Workshop,
+./translate_mods.bat                        # все моды (спросит [y/N])
+./translate_mods.bat "Pocket Change 2.0"    # один мод по имени
+./translate_mods.bat 1173662576             # один мод по **Steam-ID** (уникальный номер мода в Workshop,
                                                                  # виден в ссылке steamcommunity.com/shared/filedetails/...)
 ```
 
@@ -426,13 +427,15 @@ translate_mods.bat 1173662576             # один мод по **Steam-ID** (�
 | Флаг | Что делает |
 |---|---|
 | `--force` | **Пере-перевести всё заново** (игнорирует кэш, резервную копию не трогает) |
+| `--no-llm` | **Не ходить в LLM** — только извлечь строки и создать `<имя>.translate.csv` (пустая колонка RU для ручного перевода). Затем правь Excel → `./assemble_mod.bat "имя"` |
 | `--include-excluded` | Переводить даже моды из `exclude.txt` |
 | `--list-file файл.txt` | Список модов (одна строка = имя-или-ID) |
 
 Примеры:
 ```
-translate_mods.bat --force "Heavy Crossbow"
-translate_mods.bat --force --list-file мои_моды.txt
+./translate_mods.bat --force "Heavy Crossbow"
+./translate_mods.bat --force --list-file мои_моды.txt
+./translate_mods.bat --no-llm "Heavy Crossbow"    # только CSV, переведёшь сам
 ```
 
 ### Прогресс
