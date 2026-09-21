@@ -32,3 +32,6 @@ Desktop.ini
 
 # LibreOffice / Excel lock files (иные каталоги)
 .~lock*
+
+# автоскачанный .NET runtime (install.py -- dotnet-local в папке проекта, без админа)
+dotnet-local/
