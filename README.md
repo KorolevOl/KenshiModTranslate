@@ -61,13 +61,17 @@ install.bat
 | Проверить качество / починить | `./verify_translations.bat`, `./fix_translations.bat "имя мода"` |
 | Убрать мод из кеша | `./verify_translations.bat --purge "имя мода"` |
 | Найти, где во всех модах И В ФАЙЛАХ ИГРЫ лежит фраза (реализация поиска по `kenshi\data\*.mod`, `kenshi\mods\<мод>`, `.po`), затем выбрать номера и запустить перевод | `./search_mods.bat "фраза"` → вводишь номера → перевод запускается |
+| Откатить перевод: вернуть оригинал EN из бэкапа | `./revert_mods.bat "имя мода"` |
+| Откатить все моды (спросит y/N) | `./revert_mods.bat` |
+| По списку модов из файла | `./revert_mods.bat --list-file my_mods.txt` |
+| Показать, что можно откатить | `./revert_mods.bat --list` |
 
 **`<имя-мода>.translate.csv`** — Excel-таблица мода (названа по имени `.mod`-файла:
 `Pocket Change 2.0.mod` → `Pocket Change 2.0.translate.csv`): разделитель `|`, столбец 1 = оригинал
 («якорь», **не трогать**), столбец 2 = перевод (пусто = строка остаётся как была).
 
 **Полный цикл**: перевести → поправить CSV в Excel → `./assemble_mod.bat` → игра.
-Откат: вернуть `имя.mod.prev` обратно в `имя.mod`.
+Откат: вернуть оригинал EN с бэкапа — `./revert_mods.bat "имя мода"` (или `./revert_mods.bat` для всех модов: спросит [y/N]).
 
 ---
 
@@ -162,6 +166,8 @@ move -Force "Pocket Change 2.0.mod.prev" "Pocket Change 2.0.mod"
 ./search_mods.bat "a" --ru                      # только RU-совпадения в кеше
 # список доступных имён/ID
 py .\csv_mod.py --list
+# откат (вернуть EN оригинал из бэкапа)
+./revert_mods.bat "имя" | --dry-run | --list-file f.txt | --list | (все, y/N)
 ```
 
 ---
