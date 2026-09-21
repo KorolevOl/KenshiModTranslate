@@ -60,7 +60,7 @@ install.bat
 | Пересобрать все `.mod` из кеша (без ИИ) | `./rebuild.bat` |
 | Проверить качество / починить | `./verify_translations.bat`, `./fix_translations.bat "имя мода"` |
 | Убрать мод из кеша | `./verify_translations.bat --purge "имя мода"` |
-| Найти, где во всех модах И В ФАЙЛАХ ИГРЫ лежит фраза (реализация поиска по `kenshi\data\*.mod`, `kenshi\mods\<мод>`, `.po`), затем выбрать номера и запустить перевод | `search_mods.py "фраза"` → вводишь номера → перевод запускается |
+| Найти, где во всех модах И В ФАЙЛАХ ИГРЫ лежит фраза (реализация поиска по `kenshi\data\*.mod`, `kenshi\mods\<мод>`, `.po`), затем выбрать номера и запустить перевод | `./search_mods.bat "фраза"` → вводишь номера → перевод запускается |
 
 **`<имя-мода>.translate.csv`** — Excel-таблица мода (названа по имени `.mod`-файла:
 `Pocket Change 2.0.mod` → `Pocket Change 2.0.translate.csv`): разделитель `|`, столбец 1 = оригинал
@@ -155,11 +155,11 @@ move -Force "Pocket Change 2.0.mod.prev" "Pocket Change 2.0.mod"
 # проверить
 ./verify_translations.bat [--details] [--fix] [--purge]
 # поиск по МОДАМ И ФАЙЛАМ ИГРЫ (kenshi\data\*.mod, kenshi\mods\<мод>, .po)
-py .\search_mods.py "фраза"                      # поиск + список номеров
-py .\search_mods.py "фраза" --no-translate      # только поиск (без запуска)
-py .\search_mods.py "фраза" --yes               # авто-«все номера»
-py .\search_mods.py "фраза" --force             # пере-перевести всё заново
-py .\search_mods.py "a" --ru                     # только RU-совпадения в кеше
+./search_mods.bat "фраза"                       # поиск + список номеров
+./search_mods.bat "фраза" --no-translate        # только поиск (без запуска)
+./search_mods.bat "фраза" --yes                 # авто-«все номера»
+./search_mods.bat "фраза" --force               # пере-перевести всё заново
+./search_mods.bat "a" --ru                      # только RU-совпадения в кеше
 # список доступных имён/ID
 py .\csv_mod.py --list
 ```
@@ -296,7 +296,7 @@ curl http://localhost:11234/v1/models
 ### Шаг 7. Самопроверка (без LLM, без переводов)
 ```
 ./verify_translations.bat
-py .\search_mods.py "test"
+./search_mods.bat "test"
 ```
 Если ничего не падает — можно переводить:
 ```
