@@ -64,7 +64,8 @@ install.bat
 | Откатить перевод: вернуть оригинал EN из бэкапа | `./revert_mods.bat "имя мода"` |
 | Откатить все моды (спросит y/N) | `./revert_mods.bat` |
 | По списку модов из файла | `./revert_mods.bat --list-file my_mods.txt` |
-| Показать, что можно откатить | `./revert_mods.bat --list` |
+| Показать, что можно откатить (+ осиротевшие) | `./revert_mods.bat --list` |
+| Убрать папки удалённых модов (обратимо) | `./revert_mods.bat --clean-orphans` |
 
 **`<имя-мода>.translate.csv`** — Excel-таблица мода (названа по имени `.mod`-файла:
 `Pocket Change 2.0.mod` → `Pocket Change 2.0.translate.csv`): разделитель `|`, столбец 1 = оригинал

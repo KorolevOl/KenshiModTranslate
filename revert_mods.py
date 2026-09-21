@@ -91,19 +91,93 @@ def revert_one(target, dry_run=False):
     return "ok", "откат: EN восстановлен, текущий RU сохранён как " + os.path.basename(snap)
 
 
+def list_orphan_dir(mod):
+    """Что лежит в папке orphan-мода (без .mod)."""
+    d = mod.get("dir") or ""
+    try:
+        files = sorted(os.listdir(d))
+    except OSError:
+        files = []
+    return files
+
+
+def clean_orphans(mods, dry_run=False):
+    """Перенести orphan-папки (нет .mod, есть мусор) в <workshop>/_trash/<id>.
+
+    Обратимо: в _trash/<id>/ остаётся всё как было. Возвращает список
+    перенесённых id. Только папки с числовым id (косточки Workshop).
+    """
+    # _trash под workshop — не внутри Steam Workshop папки мода
+    trash_root = os.path.join(os.path.dirname(WORKSHOP), "_kmt_orphan_trash")
+    moved = []
+    for m in mods:
+        if not m.get("dir") or not m.get("modfile") is None:
+            continue
+        src_dir = m["dir"]
+        dst_dir = os.path.join(trash_root, m["id"])
+        if dry_run:
+            print(f"  [dry-run] #{m['id']} {m['name']!r} → {os.path.basename(dst_dir)}")
+        else:
+            os.makedirs(trash_root, exist_ok=True)
+            if os.path.exists(dst_dir):
+                # если уже есть — не затираем
+                print(f"  [skip] #{m['id']} {m['name']!r} — {os.path.basename(dst_dir)} уже в trash")
+                continue
+            shutil.move(src_dir, dst_dir)
+            print(f"  [moved] #{m['id']} {m['name']!r} → _kmt_orphan_trash")
+        moved.append(m["id"])
+    return moved, trash_root
+
+
 def main():
     args = [a for a in sys.argv[1:] if a]
     dry_run = "--dry-run" in args
     args = [a for a in args if a not in ("--dry-run", "--list")]
 
-    # --list: показать, какие моды можно откатить
+    # --clean-orphans: перенести orphan-папки (без .mod) в trash (обратимо)
+    if "--clean-orphans" in sys.argv:
+        all_mods = TM.workshop_mods()
+        orphans = [m for m in all_mods if not m.get("modfile")]
+        if not orphans:
+            print("Orphan-папок нет (всё Workshop-папки имеют .mod)")
+            return 0
+        print(f"Orphan-папок (нет .mod, только .backup/.info/.csv): {len(orphans)}")
+        if dry_run:
+            print("  [DRY-RUN — ничего не переносится]")
+        for m in orphans:
+            try:
+                files = list_orphan_dir(m)
+            except Exception:
+                files = []
+            print(f"  [#{m['id']}] {m['name'][:40] if m['name'] else '(нет имени)':42} {', '.join(files)}")
+        if not dry_run:
+            print()
+            try:
+                ans = input("Перенести все orphan-папки в _kmt_orphan_trash? [y/N]: ").strip().lower()
+            except EOFError:
+                ans = "n"
+            if ans not in ("y", "yes", "д", "да"):
+                print("прервано (ничего не перенесено)")
+                return 1
+            _, trash_root = clean_orphans(orphans, dry_run=False)
+            print(f"\nDone. Trash: {trash_root}")
+        return 0
+
+    # --list: показать, какие моды можно откатить + orphan-секция
     if "--list" in sys.argv:
         all_mods = TM.workshop_mods()
-        print(f"Workshop-модов: {len(all_mods)}")
         ready = 0
+        orphans = 0
         for m in all_mods:
             tgt = m["modfile"]
             if not tgt:
+                orphans += 1
+                try:
+                    files = list_orphan_dir(m)
+                except Exception:
+                    files = []
+                fdesc = ", ".join(files) if files else "(пусто)"
+                print(f"  [ORPHAN #{m['id']}] {m['name'][:40] if m['name'] else '(нет имени)':42} — нет .mod; {fdesc}")
                 continue
             bak = find_backup(tgt)
             if bak:
@@ -111,6 +185,8 @@ def main():
                 print(f"  [#{m['id']}] {os.path.basename(tgt):42} бэкап: {os.path.basename(bak)}{already}")
                 ready += 1
         print(f"\nГотовы к откату (есть бэкап EN): {ready}")
+        if orphans:
+            print(f"Осиротевшие (нет .mod, есть бэкап): {orphans} — очистка: --clean-orphans")
         return 0
 
     queries = []

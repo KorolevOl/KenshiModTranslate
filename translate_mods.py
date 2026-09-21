@@ -1129,18 +1129,30 @@ def main():
     log(f"cache workshop: {len(all_mods)} mods")
     skipped_excl = []
     mods = []
+    orphan_skipped = []
     for q in queries:
         m = resolve_mod(q, all_mods)
         if not m:
             log(f"[!] не найдено: {q}")
+            continue
+        if not m.get("modfile"):
+            log(f"[orphan] {m['name']!r} (#{m['id']}) — .mod удалён из Workshop, остались только бэкапы")
+            log(f"         (очистка: revert_mods.py --list --clean-orphans)")
+            orphan_skipped.append(m)
             continue
         if is_excluded(m["name"], m["modfile"]) and not INCLUDE_EXCLUDED:
             skipped_excl.append(m)
         else:
             mods.append(m)
     if not queries:
-        mods = [m for m in all_mods if not is_excluded(m["name"], m["modfile"])]
-        skipped_excl = [m for m in all_mods if is_excluded(m["name"], m["modfile"])]
+        mods = [m for m in all_mods
+                if m.get("modfile") and not is_excluded(m["name"], m["modfile"])]
+        skipped_excl = [m for m in all_mods
+                        if m.get("modfile") and is_excluded(m["name"], m["modfile"])]
+        orphan_skipped = [m for m in all_mods if not m.get("modfile")]
+        if orphan_skipped:
+            log(f"[orphan] {len(orphan_skipped)} папок(и) без .mod (мод удалён) — пропущено(ы)")
+            log(f"         (узнать детали: revert_mods.py --list; чистка: --clean-orphans)")
     if skipped_excl:
         log(f"[exclude] {EXCL_PATH}: {len(skipped_excl)} пропущено: "
             f"{', '.join(m['name'] for m in skipped_excl[:8])}"
