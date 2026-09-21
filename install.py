@@ -73,15 +73,17 @@ def step_python():
     # зависимости
     if not _have("tqdm"):
         info("устанавливаю tqdm ...")
-        r = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--quiet",
-             "--disable-pip-version-check", "-r", str(ROOT / "requirements.txt")],
-            cwd=str(ROOT),
-        )
-        if r.returncode != 0:
-            bad("pip install не удался. Попробуйте вручную: python -m pip install tqdm")
+        base = [sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check"]
+        for extra in ([], ["--user"]):
+            r = subprocess.run(base + extra + ["-r", str(ROOT / "requirements.txt")],
+                               cwd=str(ROOT))
+            if r.returncode == 0 and _have("tqdm"):
+                ok("tqdm установлена" + (" (в пользовательский каталог)" if extra else ""))
+                break
+        else:
+            bad("pip install не удался (PEP 668 / нет прав?)")
+            bad("попробуйте вручную:  python -m pip install --user tqdm")
             return False
-        ok("tqdm установлена")
     else:
         ok("tqdm уже установлена")
     return True
@@ -131,14 +133,47 @@ def _has_desktop9(exe):
 
 
 def _install_dotnet_local():
-    """Скачивает .NET Desktop Runtime 9 (x64, ~50 МБ) в <проект>\dotnet-local — без админ-прав."""
-    info("скачиваю .NET Desktop Runtime 9 в папку проекта (~50 МБ, без админ-прав) ...")
-    cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-           "iex (irm 'https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.ps1') "
-           f"-Channel 9.0 -Runtime dotnet -InstallDir '{LOCAL_DOTNET_DIR}'"]
-    r = subprocess.run(cmd, timeout=1200)
+    """Устанавливает .NET 9 Desktop Runtime в <проект>\dotnet-local — без админ-прав.
+
+    Использует официальный скрипт dotnet.microsoft.com (dotnet-install.ps1),
+    загружая его в файл и вызывая с параметрами как -File (а не iex)."""
+    import urllib.request
+    script_url = "https://dot.net/v1/dotnet-install.ps1"
+    LOCAL_DOTNET_DIR.mkdir(parents=True, exist_ok=True)
+    ps1 = LOCAL_DOTNET_DIR / "dotnet-install.ps1"
+    info("качаю официальный скрипт dotnet.microsoft.com ...")
+    try:
+        with urllib.request.urlopen(script_url, timeout=30) as r, open(ps1, "wb", buffering=0) as f:
+            f.write(r.read())
+    except Exception as e:
+        bad(f"не получилось скачать скрипт: {e}")
+        return False
     exe = LOCAL_DOTNET_DIR / "dotnet.exe"
-    return (r.returncode == 0) and exe.exists() and _has_desktop9(exe)
+    last_log = ""
+    for runtime in ("dotnet", "windowsdesktop"):
+        label = "базовый рантайм (dotnet.exe)" if runtime == "dotnet" else "WindowsDesktop-рантайм"
+        info(f"ставлю .NET 9 {label} (без админ-прав) ...")
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+             "-File", str(ps1),
+             "-Channel", "9.0",
+             "-Runtime", runtime,
+             "-InstallDir", str(LOCAL_DOTNET_DIR)],
+            timeout=1800,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        last_log = (r.stdout or "").strip()
+        if r.returncode != 0:
+            bad(f"{label}: скрипт завершился с ошибкой. Хвост:")
+            for line in last_log.splitlines()[-14:]:
+                print("       " + line)
+            return False
+    if not exe.exists():
+        bad("после установки нет dotnet.exe. Хвост:")
+        for line in last_log.splitlines()[-14:]:
+            print("       " + line)
+        return False
+    return _has_desktop9(exe)
 
 
 def step_dotnet(apply=True):
