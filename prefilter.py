@@ -55,11 +55,9 @@ def nothing_to_translate(en):
     return not re.search(r"[A-Za-z]", cleaned)
 
 # --- placeholder containment (safety for reuse) -----------------------------
-_PH_RE = re.compile(
-    r"%\d+\$[+-0#]*\d*(?:\.\d+)?[diouxXeEfFgGcs]"
-    r"|%[+-0#]*\d*(?:\.\d+)?[diouxXeEfFgGcs%]"
-    r"|\{[0-9]+\}"
-)
+# 2026-09-21: PLACEHOLDER_RE теперь из textutil (единый источник).
+from textutil import PLACEHOLDER_RE as _PH_RE, PO_PAIR_RE, parse_po_file
+
 def _ph(s):
     return set(_PH_RE.findall(s or ""))
 
@@ -71,31 +69,22 @@ def _ru_is_dirty(ru):
     if not isinstance(ru, str) or not ru.strip():
         return True
     # кириллица в /.../ — артефакт
-    if re.search(r"/[^/\s]*[\u0400-\u04FF][^/\s]*/", ru):
+    if re.search(r"/[^\s/]*[\u0400-\u04FF][^\s/]*/", ru):
         return True
     # одиночные численные [N]-скобки, если рядом нет нормального BBCode
+    # 2026-09-21: исправлен баг `\[[0-9+]\]` → `\[0-9+\]` (прежний искал
+    # буквально "0+" внутри скобок, а не число).
     tags = re.findall(r"\[[^\[\]]*\]", ru)
     real = [t for t in tags if re.search(r"[A-Za-z]", t)]
     if not real and re.search(r"\[0-9+\]", ru):
         return True
     return False
 
-# --- .po pair parsing (same shape as po_hints / extract_game_names) ----------
-_PO_PAIR = re.compile(r'msgid\s+"([^"\n]+)"\s*\nmsgstr\s+"([^"\n]+)"')
-
+# --- .po pair parsing (объединён с po_hints через textutil) ----------------
 def _pairs_from_po(paths):
     out, seen = [], set()
     for p in paths:
-        if not p or not os.path.isfile(p):
-            continue
-        try:
-            txt = open(p, encoding="utf-8", errors="replace").read()
-        except Exception:
-            continue
-        for m in _PO_PAIR.finditer(txt):
-            en, ru = m.group(1).strip(), m.group(2).strip()
-            if not en or not ru:
-                continue
+        for en, ru in parse_po_file(p):
             k = en.lower()
             if k in seen:
                 continue

@@ -27,7 +27,9 @@ from collections import Counter
 # = 24/37/28/27) не дают вклада. 10 — померенный порог на реальном датасете .po (4302 пары).
 RARE_MAX = 10
 
-_re_pair = re.compile(r'msgid\s+"([^"\n]+)"\s*\nmsgstr\s+"([^"\n]+)"')
+# 2026-09-21: .po pair parsing теперь из textutil (единый источник,
+# было дублировано и в prefilter.py, и здесь по одному regex'у).
+from textutil import PO_PAIR_RE, parse_po_file
 _re_word = re.compile(r"[A-Za-z][A-Za-z'\-]*")
 _re_strip = re.compile(r"[\-']")
 
@@ -79,9 +81,7 @@ def _load(paths):
     for p in paths:
         if not os.path.isfile(p):
             continue
-        txt = open(p, encoding="utf-8", errors="replace").read()
-        for m in _re_pair.finditer(txt):
-            en, ru = m.group(1).strip(), m.group(2).strip()
+        for en, ru in parse_po_file(p):
             if not en or not ru or en == ru or len(en) > 64:
                 continue
             k = en.lower()

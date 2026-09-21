@@ -17,16 +17,10 @@
 import re
 from collections import Counter
 
-# Плейсхолдеры, которые модель ДОЛЖНА сохранить: %s %d %1$s %.2f {0} {1}.
-# ВАЖНО: НЕ считаем обычным плейсхолдером ПРОЦЕНТ в тексте ("90% chance") —
-# раньше флаг-пробел в [- 0+#]* жрал зазор и подбирал случайную букву, давая
-# ложные "потерян %s". Правило: сразу за % должен идти флаг из [+-0#] (без
-# пробела!), ширина/точность, затем конверсионная буква. "% chance" не match.
-PLACEHOLDER_RE = re.compile(
-    r"%\d+\$[+-0#]*\d*(?:\.\d+)?[diouxXeEfFgGcs]"   # positional: %1$s, %2$0.3f
-    r"|%[+-0#]*\d*(?:\.\d+)?[diouxXeEfFgGcs%]"       # printf: %s, %d, %.2f (no space flag)
-    r"|\{[0-9]+\}"                                    # format: {0} {1}
-)
+# 2026-09-21: ЕДИНЫЙ ИСТОЧНИК placeholder-regex — textutil.py (было дублировано
+# здесь и в prefilter.py). textutil не зависит от validate_translation,
+# поэтому импорт безопасен (нет циклических зависимостей).
+from textutil import PLACEHOLDER_RE
 WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё]+")
 CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 CYRILLIC_WORD_RE = re.compile(r"[А-Яа-яЁё]{2,}")

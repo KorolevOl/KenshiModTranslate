@@ -22,6 +22,11 @@ state/
 logs/
 *.log
 
+# Visual-check scratch (archify deliver / visual-check produces these)
+docs/workflow.visual-check.*
+docs/*.visual-check.html
+docs/workflow.html.bak
+
 # OS / IDE
 Thumbs.db
 Desktop.ini
