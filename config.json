@@ -1,8 +1,8 @@
 {
   "_help": "Конфиг translate_mods.py. ПУТИ: абсолютные — только для каталогов вне папки проекта (game, workshop на E:); относительные к папке проекта — state, modtranslate_cli, dotnet и т.п. (рабочие из любого CWD). Динамический батч: строки в чанке подбираются под контекстное окно провайдера (context_window токенов, вход+выход), потолок — max_batch_lines строк; короткие строки дают чанк у потолка, длинные — токены ужимают. max_output_tokens: запас под RU-вывод. При сбое чанка — допериод отдельным FIX-барами.",
   "paths": {
-    "game": "E:\\steamlibrary\\steamapps\\common\\kenshi",
-    "workshop": "E:\\steamlibrary\\steamapps\\workshop\\content\\233860",
+    "game": "E:\\SteamLibrary\\steamapps\\common\\kenshi",
+    "workshop": "E:\\SteamLibrary\\steamapps\\workshop\\content\\233860",
     "dotnet": "../dotnet9/dotnet.exe",
     "modtranslate_cli": "bin/Release/net9.0-windows/kenshi-modtranslate.dll",
     "state": "state"
