@@ -1,10 +1,10 @@
 @echo off
 setlocal
 rem ============================================================
-rem  СБОРКА мода из translate.csv (ручная правка перевода)
+rem  СБОРКА мода из <имя-мода>.translate.csv (ручная правка перевода)
 rem  usage:  assemble_mod.bat "имя мода"
 rem          assemble_mod.bat 1140742609
-rem  Перед сборкой: поправьте translate.csv в папке мода (Steam Workshop).
+rem  Перед сборкой: поправьте <имя-мода>.translate.csv в папке мода (Steam Workshop).
 rem ============================================================
 if "%~1"=="" (
   echo [!] укажи имя мода:  assemble_mod.bat "имя мода"

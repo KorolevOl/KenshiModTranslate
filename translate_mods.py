@@ -810,10 +810,16 @@ def done_n_frac(name, done_map, entries):
     return sum(1 for v in done_map.values() if v) / max(1, len(entries))
 
 def export_mod_csv(target, entries, done):
-    """Пишет <папка .mod>/translate.csv: оригинал|перевод (UTF-8 BOM, разделитель |).
-   Имя файла жёсткое: translate.csv (пользователь правит его руками)."""
+    """Пишет <папка .mod>/<имя-мода>.translate.csv: оригинал|перевод (UTF-8 BOM, разделитель |).
+   Имя файла = имя .mod без расширения + .translate.csv (2026-09-21: раньше просто
+   translate.csv — в папке с НЕСКОЛЬКИМИ .mod они затирали друг друга, напр.
+   kenshi\\data\\: rebirth.mod/Dialogue.mod/Newwworld.mod). Старые translate.csv
+   по-прежнему читаются csv_mod.py как fallback."""
     import csv as _csv
-    out = os.path.join(os.path.dirname(target), "translate.csv")
+    base = os.path.basename(target)
+    if base.lower().endswith(".mod"):
+        base = base[:-4]
+    out = os.path.join(os.path.dirname(target), base + ".translate.csv")
     n_filled = 0
     with open(out, "w", encoding="utf-8-sig", newline="") as f:
         w = _csv.writer(f, delimiter="|", quoting=_csv.QUOTE_MINIMAL)
@@ -999,7 +1005,7 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None):
     try:
         export_mod_csv(target, entries, done)
     except Exception as ex:
-        log(f"  [csv] не смог записать translate.csv: {ex}")
+        log(f"  [csv] не смог записать <имя-мода>.translate.csv: {ex}")
     return True
 
 # ---------------- main ----------------

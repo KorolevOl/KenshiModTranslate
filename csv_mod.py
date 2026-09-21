@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""csv_mod.py — экспорт/импорт перевода мода через translate.csv (разделитель |,
-столбец 1 = оригинал EN, столбец 2 = перевод RU). Команды: export <мод> [моды...] — выгрузить translate.csv в папку мода в Steam (без LLM-перевода); import <мод> [моды...] — собрать .mod из translate.csv (ручная правка). Выходной: 0 — ок; 1 — ошибка (мод не найден, нет маппинга и т.п.).
+"""csv_mod.py — экспорт/импорт перевода мода через <имя-мода>.translate.csv (разделитель |,
+столбец 1 = оригинал EN, столбец 2 = перевод RU). Команды: export <мод> [моды...] — выгрузить <имя-мода>.translate.csv в папку мода (без LLM-перевода); import <мод> [моды...] — собрать .mod из CSV (ручная правка; старые translate.csv читаются как fallback). Выходной: 0 — ок; 1 — ошибка (мод не найден, нет маппинга и т.п.).
 
 ИМПОРТ не меняет порядок строк .mod: apply переписывает строки по ПОЗИЦИИ,
 поэтому перстановка идёт по точному тексту оригинала (idx_by_orig), не по i."""
@@ -60,33 +60,63 @@ def resolve(target_arg, TM):
     entries = json.load(open(efile, encoding="utf-8"))
     return dict(target=target, mfile=mfile, efile=efile, h=h, entries=entries, modname=info["name"])
 
-def export_csv(tgt_dir, entries, mfile, log):
+def export_csv(tgt_dir, entries, mfile, target, log):
     TM = _tm()
     done = {}
     if os.path.exists(mfile) and os.path.getsize(mfile) > 0:
         mm = json.load(open(mfile, encoding="utf-8"))
         done = {str(r.get("i")): (r.get("ru") or "") for r in mm if isinstance(r, dict)}
+    out_path = csv_write_path(tgt_dir, target)   # ВСЕГДА <имя-мода>.translate.csv
     n_filled = 0
-    with open(os.path.join(tgt_dir, "translate.csv"), "w", encoding="utf-8-sig", newline="") as f:
+    with open(out_path, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f, delimiter="|", quoting=csv.QUOTE_MINIMAL)
         for e in entries:
             i = str(e.get("i")); orig = (e.get("original") or "").strip(); ru = (done.get(i) or "").strip()
             w.writerow([orig, ru]); n_filled += (ru != "")
-    log(f"[export] {os.path.join(tgt_dir,'translate.csv')}"); log(f"[export] строк: {len(entries)} (заполнено RU: {n_filled})")
+    log(f"[export] {out_path}"); log(f"[export] строк: {len(entries)} (заполнено RU: {n_filled})")
     return True
+def csv_write_path(tgt_dir, target):
+    """Для ЗАПИСИ: всегда <папка>/<имя-мода>.translate.csv.
+    Никогда не трогает общий legacy translate.csv — в папке с несколькими .mod
+    (kenshi\\data\\: rebirth/Dialogue/Newwworld) он был бы общим и затираемым."""
+    base = os.path.basename(target)
+    if base.lower().endswith(".mod"):
+        base = base[:-4]
+    return os.path.join(tgt_dir, base + ".translate.csv")
+
+def csv_read_path(tgt_dir, target):
+    """Для ЧТЕНИЯ (импорт): сначала <имя-мода>.translate.csv,
+    затем legacy translate.csv (назад-совместимость с старыми правками)."""
+    new = csv_write_path(tgt_dir, target)
+    if os.path.isfile(new):
+        return new
+    old = os.path.join(tgt_dir, "translate.csv")
+    if os.path.isfile(old):
+        return old
+    return new
+    if os.path.isfile(old):
+        # чтение (import) — используем старый, чтобы не потерять правки
+        return old
+    return new  # запись (export) — по новому имени
 
 def import_csv(tgt_dir, entries, mfile, target, log):
     TM = _tm()
-    csv_path = os.path.join(tgt_dir, "translate.csv")
+    csv_path = csv_read_path(tgt_dir, target)
     if not os.path.isfile(csv_path):
-        log(f"[!] нет translate.csv: {csv_path}"); return False
+        # пробуем и старое имя на всякий
+        old = os.path.join(tgt_dir, "translate.csv")
+        if os.path.isfile(old):
+            csv_path = old
+        else:
+            log(f"[!] нет CSV-файла мода: {csv_path}"); return False
     pairs = []
     with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
         for row in csv.reader(f, delimiter="|"):
             if not row or not any((c or "").strip() for c in row): continue
             orig = (row[0] or "").strip(); ru = (row[1]).strip() if len(row) > 1 else ""
             pairs.append((orig, ru))
-    if not pairs: log("[!] translate.csv пуст"); return False
+    if not pairs:
+        log(f"[!] {os.path.basename(csv_path)} пуст"); return False
     # индекс строка -> i по TOЧНОМУ тексту оригинала
     idx_by_orig = {}
     for e in entries:
@@ -153,7 +183,7 @@ def main(argv):
         print(f".mod: {info['target']}")
         print(f"кеш: hash={info['h']}  entries={len(info['entries'])}")
         tgt_dir = os.path.dirname(info["target"])
-        ok = export_csv(tgt_dir, info["entries"], info["mfile"], print) if a.cmd == "export" else import_csv(tgt_dir, info["entries"], info["mfile"], info["target"], print)
+        ok = export_csv(tgt_dir, info["entries"], info["mfile"], info["target"], print) if a.cmd == "export" else import_csv(tgt_dir, info["entries"], info["mfile"], info["target"], print)
         if not ok: rc = 1
         if i < len(mods): print("-" * 50)
     return rc
