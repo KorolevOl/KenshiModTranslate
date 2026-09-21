@@ -65,6 +65,7 @@ install.bat
 | Откатить все моды (спросит y/N) | `./revert_mods.bat` |
 | По списку модов из файла | `./revert_mods.bat --list-file my_mods.txt` |
 | Показать, что можно откатить (+ осиротевшие) | `./revert_mods.bat --list` |
+| Откатить любой `.mod` (kenshi\data\, kenshi\mods\…) | `./revert_mods.bat --file "E:\SteamLibrary\steamapps\common\Kenshi\data\rebirth.mod"` |
 | Убрать папки удалённых модов (обратимо) | `./revert_mods.bat --clean-orphans` |
 
 **`<имя-мода>.translate.csv`** — Excel-таблица мода (названа по имени `.mod`-файла:
@@ -169,6 +170,8 @@ move -Force "Pocket Change 2.0.mod.prev" "Pocket Change 2.0.mod"
 py .\csv_mod.py --list
 # откат (вернуть EN оригинал из бэкапа)
 ./revert_mods.bat "имя" | --dry-run | --list-file f.txt | --list | (все, y/N)
+./revert_mods.bat --file "<путь>\к .mod"   # kenshi\data\*.mod, kenshi\mods\...
+./revert_mods.bat --clean-orphans [--dry-run]
 ```
 
 ---

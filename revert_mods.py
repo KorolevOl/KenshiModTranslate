@@ -189,6 +189,23 @@ def main():
             print(f"Осиротевшие (нет .mod, есть бэкап): {orphans} — очистка: --clean-orphans")
         return 0
 
+    # --file <path>: revert a single .mod (kenshi\data\*.mod, kenshi\mods\<mod>\*.mod —
+    # любой путь) — зеркало translate_mods.py --file.
+    if "--file" in sys.argv:
+        i = sys.argv.index("--file")
+        if i + 1 >= len(sys.argv) or not sys.argv[i + 1]:
+            print("revert: --file нужен путь к .mod")
+            return 2
+        path = sys.argv[i + 1]
+        if not os.path.isfile(path) or not path.lower().endswith(".mod"):
+            print(f"revert: --file: не найден .mod-файл: {path}")
+            return 3
+        if dry_run:
+            print("Откат (dry-run): " + path)
+        status, detail = revert_one(path, dry_run=dry_run)
+        print(f"  [{status}] {os.path.basename(path)} — {detail}")
+        return {"ok": 0, "skip": 0, "error": 1}[status]
+
     queries = []
     if "--list-file" in args:
         i = args.index("--list-file")
