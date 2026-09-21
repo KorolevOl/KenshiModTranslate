@@ -116,10 +116,22 @@ et9.0-windows\kenshi-modtranslate.dll` отсутствует (должна бы
 5. Запустить игру снова
 
 Если что-то пошло не так — откат:
-```
+
+```bat
+:: в cmd (Command Prompt):
 ren "Pocket Change 2.0.mod" "Pocket Change 2.0.mod.broken"
 ren "Pocket Change 2.0.mod.prev" "Pocket Change 2.0.mod"
 ```
+
+```powershell
+# в PowerShell (ren там не работает):
+Rename-Item "Pocket Change 2.0.mod"  "Pocket Change 2.0.mod.broken"
+Rename-Item "Pocket Change 2.0.mod.prev" "Pocket Change 2.0.mod"
+```
+
+> `ren` — встроенная команда **cmd** (ставится вместе с Windows, ничего
+> доустанавливать не нужно). В **PowerShell** переименование — это
+> `Rename-Item` (см. выше). Оба варианта эквивалентны.
 
 ---
 
