@@ -115,23 +115,25 @@ et9.0-windows\kenshi-modtranslate.dll` отсутствует (должна бы
 4. `assemble_mod.bat "Pocket Change 2.0"` — пересобрать .mod из CSV
 5. Запустить игру снова
 
-Если что-то пошло не так — откат:
+Если что-то пошло не так — откат (переименовать файлы):
 
 ```bat
 :: в cmd (Command Prompt):
-ren "Pocket Change 2.0.mod" "Pocket Change 2.0.mod.broken"
-ren "Pocket Change 2.0.mod.prev" "Pocket Change 2.0.mod"
+move /Y "Pocket Change 2.0.mod" "Pocket Change 2.0.mod.broken"
+move /Y "Pocket Change 2.0.mod.prev" "Pocket Change 2.0.mod"
 ```
 
 ```powershell
-# в PowerShell (ren там не работает):
-Rename-Item "Pocket Change 2.0.mod"  "Pocket Change 2.0.mod.broken"
-Rename-Item "Pocket Change 2.0.mod.prev" "Pocket Change 2.0.mod"
+# в PowerShell:
+move -Force "Pocket Change 2.0.mod"  "Pocket Change 2.0.mod.broken"
+move -Force "Pocket Change 2.0.mod.prev" "Pocket Change 2.0.mod"
 ```
 
-> `ren` — встроенная команда **cmd** (ставится вместе с Windows, ничего
-> доустанавливать не нужно). В **PowerShell** переименование — это
-> `Rename-Item` (см. выше). Оба варианта эквивалентны.
+> `move` — встроенная команда, которая есть у всех Windows (ставится вместе
+> с ОС, ничего доустанавливать не нужно). В **cmd** добавьте `/Y` (не
+> спрашивать «заменить? да»), в **PowerShell** — `-Force` (разрешить
+> перезапись). Вариант `ren` (cmd) работает аналогично, но в PowerShell
+> нет — `move` универсальнее.
 
 ---
 
