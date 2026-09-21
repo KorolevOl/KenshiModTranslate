@@ -1,4 +1,4 @@
-"""Проверка и (опционально) починка переводов, уже в кеше state/.
+r"""Проверка и (опционально) починка переводов, уже в кеше state/.
 
 ПРОСМОТР (read-only, 0 запросов к LLM):
   Ходит по state/*_entries.json + state/*_mapping.json и сравнивает
@@ -164,7 +164,7 @@ def load_state(h, state):
     return entries, mapping, os.path.isfile(epath), os.path.isfile(mpath)
 
 def game_has_translation(name):
-    """True если игра увидит РЯ (в place):
+    r"""True если игра увидит РЯ (в place):
     - в mods\<name>\ есть .mod с кириллицей (ручной/копия), ЛИБО
     - в workshop папке мода лежит наш .orig_<h>.backup (перевод in-place).
     Для имён с несовпадением workshop-title vs folder-name — ищем backup по всем папкам."""
@@ -259,7 +259,7 @@ def _is_excluded_name(name):
         return False
 
 def _our_modfolder(h, name):
-    """Find the mods\<name> folder WE translated for hash h (by our .orig_<h>.backup marker).
+    r"""Find the mods\<name> folder WE translated for hash h (by our .orig_<h>.backup marker).
     Returns (folder_path, is_ours). is_ours=False -> external (Vortex/manual) -> never touch."""
     candidates = []
     if name:

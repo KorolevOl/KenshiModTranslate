@@ -343,16 +343,23 @@ def resolve_mod(query, all_mods):
 def ensure_target(m):
     """Целевой .mod для перевода.
     Workshop-мод -> его СОБСТВЕННЫЙ файл (in-place, без копии в mods\\).
-    Ручной мод (не из workshop) -> старое поведение: копия в MODS_DIR.
-    Возвращает путь к .mod или None."""
+    Файлы игры (kenshi\\data\\*.mod, kenshi\\mods\\*.mod) -> тоже in-place
+      (2026-09-21: добавлено — теперь можно переводить и встроенные в игру строки
+       через поиск search_mods.py → ввод номеров → запуск перевода).
+    Ручной мод (в ином месте) -> старое поведение: копия в mods\\."""
     src = m["modfile"]
     if not src or not os.path.isfile(src):
         return None
-    ws = os.path.normcase(os.path.abspath(WORKSHOP)) + os.sep
     p = os.path.normcase(os.path.abspath(src))
-    if p.startswith(ws):
-        return src                      # in-place, прямо в workshop
-    # ручной мод: копируем в mods\ (старое поведение)
+    # in-place: файлы workshop ИЛИ файлы внутри каталога игры
+    for base in (WORKSHOP, GAME):
+        try:
+            b = os.path.normcase(os.path.abspath(base)) + os.sep
+            if p.startswith(b):
+                return src
+        except Exception:
+            pass
+    # ручной мод (вне workshop, вне игры) — копируем в mods\ (старое поведение)
     target_dir = os.path.join(MODS_DIR, m["name"])
     target = os.path.join(target_dir, os.path.basename(src))
     if os.path.isfile(target) and os.path.getsize(target) == os.path.getsize(src):
@@ -847,7 +854,14 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None):
         log("  [!] не могу подготовить целевой .mod - пропускаю")
         return False
     in_place = (os.path.normcase(os.path.abspath(target)) == os.path.normcase(os.path.abspath(src)))
-    log(f"  цель: {target}" + ("  (in-place, workshop)" if in_place else "  (копия в mods\\)"))
+    _t = os.path.normcase(os.path.abspath(target))
+    _ws = os.path.normcase(os.path.abspath(WORKSHOP)) + os.sep
+    _gp = os.path.normcase(os.path.abspath(GAME)) + os.sep
+    if in_place:
+        where = "in-place, workshop" if _t.startswith(_ws) else ("in-place, игра" if _t.startswith(_gp) else "in-place")
+    else:
+        where = "копия в mods"
+    log(f"  цель: {target}  ({where})")
     import hashlib
     # Якорь кеша — MD5 ОРИГИНАЛА (EN). Если рядом уже лежит наш бэкап .orig_<h>.backup —
     # берём h из его имени (файл после перевода отличается: RU), иначе md5(target).
@@ -989,6 +1003,40 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None):
     return True
 
 # ---------------- main ----------------
+def translate_file(path, query_hint="", force=None, label=None):
+    """Перевести ОДИН .mod-файл (workshop mod ИЛИ кенши игра: kenshi\\data\\*.mod, kenshi\\mods\\*.mod)
+    — публичная обёртка для search_mods.py и CLI:
+       • path     — абсолютный путь к .mod
+       • label    — человекочитаемое имя (default: basename)
+       • force    — override FORCE (True/None)
+    Возвращает True/False (успех/сбой).
+    Работает в рамках одного progress (внешний бар — на 1 мод)."""
+    assert os.path.isfile(path), f"file not found: {path}"
+    if force is not None:
+        _set_force(force)
+    label = label or os.path.basename(path)
+    m = {
+        "name":  label,                       # display name
+        "id":    "game" if os.path.normcase(os.path.abspath(path)).startswith(
+                os.path.normcase(os.path.abspath(GAME)) + os.sep) else "mod",
+        "modfile": path,
+        "dir":   os.path.dirname(path),
+    }
+    with Progress(1) as PR:
+        PROGRESS["progress"] = PR
+        try:
+            r = translate_one(m, index=1, total_mods=1, ctx={"nmods_done": 0, "total_mods": 1})
+        finally:
+            PROGRESS["progress"] = None
+    log(f"  [translate_file {label}] => {'OK' if r else 'FAIL'}")
+    return bool(r)
+
+def _set_force(flag):
+    """Local FORCE override (no global mutation — uses env trick)."""
+    # FORCE is module-level; simplest path: set sys.argv (already scanned). We
+    # need to flip module global in a safe way. Use exec-style:
+    globals()["FORCE"] = bool(flag)
+
 def parse_list_file(path):
     out = []
     for ln in open(path, encoding="utf-8-sig", errors="replace"):
@@ -1005,6 +1053,31 @@ def main():
         sys.argv.remove("--include-excluded")
         INCLUDE_EXCLUDED = True
     args = [a for a in sys.argv[1:] if a]
+    # 2026-09-21: --file <path> --label <label> — перевести произвольный .mod
+    # напрямую (workshop mod, kenshi\data\*.mod, kenshi\mods\<mod>\*.mod — любой путь).
+    # Возврат: 0 = ok, 2 = арг. ошибка, 3 = fail.
+    if "--file" in args:
+        i = args.index("--file")
+        if i + 1 >= len(args) or not args[i + 1]:
+            print("--file needs a path")
+            return 2
+        fp = args[i + 1]
+        args = args[:i] + args[i + 2:]
+        label = None
+        if "--label" in args:
+            j = args.index("--label")
+            if j + 1 < len(args) and args[j + 1]:
+                label = args[j + 1]
+                args = args[:j] + args[j + 2:]
+            else:
+                print("--label needs a value")
+                return 2
+        try:
+            ok = translate_file(fp, label=label)
+        except Exception as ex:
+            log(f"  [!] --file error: {ex}")
+            return 3
+        return 0 if ok else 3
     queries = []
     if "--list-file" in args:
         i = args.index("--list-file")

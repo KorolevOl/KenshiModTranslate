@@ -59,7 +59,7 @@ translate_mods.bat
 | Пересобрать все `.mod` из кеша (без ИИ) | `rebuild.bat` |
 | Проверить качество / починить | `verify_translations.bat`, `fix_translations.bat "имя мода"` |
 | Убрать мод из кеша | `verify_translations.bat --purge "имя мода"` |
-| Найти, где во всех модах лежит фраза | `search_mods.py "фраза"` |
+| Найти, где во всех модах И В ФАЙЛАХ ИГРЫ лежит фраза (реализация поиска по `kenshi\data\*.mod`, `kenshi\mods\<мод>`, `.po`), затем выбрать номера и запустить перевод | `search_mods.py "фраза"` → вводишь номера → перевод запускается |
 
 **`translate.csv`** — Excel-таблица мода: разделитель `|`, столбец 1 = оригинал
 («якорь», **не трогать**), столбец 2 = перевод (пусто = строка остаётся как была).
@@ -152,8 +152,12 @@ assemble_mod.bat "имя"
 rebuild.bat | <Steam-ID> | <имя>
 # проверить
 verify_translations.bat [--details] [--fix] [--purge]
-# поиск
-python search_mods.py "фраза" [--en|--ru|--dll]
+# поиск по МОДАМ И ФАЙЛАМ ИГРЫ (kenshi\data\*.mod, kenshi\mods\<мод>, .po)
+python search_mods.py "фраза"                       # поиск + список номеров
+python search_mods.py "фраза" --no-translate        # только поиск (без запуска)
+python search_mods.py "фраза" --yes                 # авто-«все номера»
+python search_mods.py "фраза" --force               # пере-перевести всё заново
+python search_mods.py "a" --ru                      # только RU-совпадения в кеше
 # список доступных имён/ID
 python csv_mod.py --list
 ```
