@@ -105,7 +105,12 @@ et9.0-windows\kenshi-modtranslate.dll` отсутствует (должна бы
 
 1. `translate_mods.bat "Pocket Change 2.0"` — перевести (или уже переведено)
 2. Посмотреть перевод: в игре или в `.../1173662576/translate.csv` (открыть в Excel)
-   — **если всё устраивает, останавливается здесь**. Остальные шаги не нужны.
+   — **если всё устраивает, останавливаемся здесь**. Остальные шаги не нужны.
+
+   > `_id_` в URL/путь (например, `1173662576`) **— это Steam ID мода**.
+   > У каждого мода Workshop есть уникальный цифровой ID (виден в ссылке
+   > steamcommunity.com/shared/filedetails/**1173662576**), по нему названа папка
+   > в Steam. В этой папке и лежит `translate.csv`.
 3. (Только если что-то не так) Править 2‑ю колонку (RU) в translate.csv, сохранить
 4. `assemble_mod.bat "Pocket Change 2.0"` — пересобрать .mod из CSV
 5. Запустить игру снова
@@ -391,7 +396,8 @@ prefilter (reuse без LLM) и словарь работают как есть.
 ```
 translate_mods.bat                        # все моды (спросит [y/N])
 translate_mods.bat "Pocket Change 2.0"    # один мод по имени
-translate_mods.bat 1173662576             # один мод по Steam-ID
+translate_mods.bat 1173662576             # один мод по **Steam-ID** (уникальный номер мода в Workshop,
+                                                                 # виден в ссылке steamcommunity.com/shared/filedetails/...)
 ```
 
 ### Флаги
