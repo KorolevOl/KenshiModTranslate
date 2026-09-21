@@ -1,5 +1,7 @@
 # Kenshi RU — Переводчик модов
 
+![kenshi-mod-translate](docs/kenshi-mod-translate.svg)
+
 Моды Steam Workshop → на русский. Локальный ИИ переводит, ты можешь править
 каждую фразу в `translate.csv` (Excel) и пересобирать `.mod`. Перевод пишется
 **на месте** — в папке мода в Steam, в `mods\` ничего не копируется.
