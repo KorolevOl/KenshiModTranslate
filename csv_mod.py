@@ -62,18 +62,28 @@ def resolve(target_arg, TM):
 
 def export_csv(tgt_dir, entries, mfile, target, log):
     TM = _tm()
+    from validate_translation import finished_row
     done = {}
     if os.path.exists(mfile) and os.path.getsize(mfile) > 0:
         mm = json.load(open(mfile, encoding="utf-8"))
         done = {str(r.get("i")): (r.get("ru") or "") for r in mm if isinstance(r, dict)}
     out_path = csv_write_path(tgt_dir, target)   # ВСЕГДА <имя-мода>.translate.csv
     n_filled = 0
+    n_skipped = 0
     with open(out_path, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f, delimiter="|", quoting=csv.QUOTE_MINIMAL)
         for e in entries:
-            i = str(e.get("i")); orig = (e.get("original") or "").strip(); ru = (done.get(i) or "").strip()
+            i = str(e.get("i")); orig = (e.get("original") or "").strip()
+            ru = (done.get(i) or "").strip()
+            # 2026-09-22: unified predicate — a row is written to the CSV if it's a real
+            # translation or an empty translatable one (for editing in Excel);
+            # system / non-translatable rows are excluded.
+            if not finished_row(orig, ru or None):
+                n_skipped += 1
+                continue
             w.writerow([orig, ru]); n_filled += (ru != "")
-    log(f"[export] {out_path}"); log(f"[export] строк: {len(entries)} (заполнено RU: {n_filled})")
+    log(f"[export] {out_path}")
+    log(f"[export] rows: {n_filled} translated, {n_skipped} system/non-translatable skipped")
     return True
 def csv_write_path(tgt_dir, target):
     """Для ЗАПИСИ: всегда <папка>/<имя-мода>.translate.csv.

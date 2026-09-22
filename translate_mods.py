@@ -570,6 +570,13 @@ class Transient(Exception):
     pass
 
 def save_map():
+    """Save the in-progress done_map to disk (resumable).
+    2026-09-22: НЕ фильтруем здесь — это raw intermediate state для resume.
+    Финальный save (в translate_one, перед apply и export_mod_csv) применяет
+    keep_row — там «готовый» mapping. save_map вызывается каждые N чанков и
+    должен быть дешёвым + не терять данные mid-flight (если строка ещё в
+    процессе — не отбрасываем её сейчас, пусть финальный save решит).
+    """
     if CUR["mapfile"] and CUR["mapref"] is not None:
         m = CUR["mapref"]
         with open(CUR["mapfile"], "w", encoding="utf-8") as f:
@@ -663,7 +670,9 @@ def translate_entries(entries, done_map, name, ctx):
             en = e.get("original") or ""
             if prefilter.nothing_to_translate(en):
                 n_passthrough += 1
-                done_map[str(e["i"])] = str(en)   # pass: оставляем оригинал
+                # 2026-09-22: passthrough (RU=EN) НЕ пишем в кэш — строка
+                # «ничего не переводить»: кириллица/знаки/CJK/пусто. В .mod
+                # оригинал и так останется (строка без перевода не меняется).
                 continue
             ru, src = prefilter.lookup(en)
             if ru:
@@ -815,24 +824,37 @@ def export_mod_csv(target, entries, done):
    Имя файла = имя .mod без расширения + .translate.csv (2026-09-21: раньше просто
    translate.csv — в папке с НЕСКОЛЬКИМИ .mod они затирали друг друга, напр.
    kenshi\\data\\: rebirth.mod/Dialogue.mod/Newwworld.mod). Старые translate.csv
-   по-прежнему читаются csv_mod.py как fallback."""
+   по-прежнему читаются csv_mod.py как fallback.
+
+   2026-09-22 (по просьбе пользователя): строки, определённые как СИСТЕМНЫЕ
+   (identifier/onomatopoeia/уже-русский/passthrough), НЕ пишутся в CSV и в кэш —
+   они не «перевод» (единый источник = validate_translation.finished_row /
+   is_translatable_text). Пустые ПЕРЕВОДИМЫЕ строки (LLM не дала) пишутся в CSV
+   пустыми — user заполняет в Excel; в кэш они НЕ попадают (has_real_translation)."""
     import csv as _csv
+    from validate_translation import finished_row
     base = os.path.basename(target)
     if base.lower().endswith(".mod"):
         base = base[:-4]
     out = os.path.join(os.path.dirname(target), base + ".translate.csv")
     n_filled = 0
+    n_skipped = 0
     with open(out, "w", encoding="utf-8-sig", newline="") as f:
         w = _csv.writer(f, delimiter="|", quoting=_csv.QUOTE_MINIMAL)
         for e in entries:
             i = str(e.get("i"))
             orig = (e.get("original") or "").strip()
             ru = (done.get(i) or "").strip()
+            # finished_row: реальный перевод ИЛИ пустая переводимая строка (для Excel)
+            if not finished_row(orig, ru or None):
+                n_skipped += 1
+                continue
             w.writerow([orig, ru])
             if ru:
                 n_filled += 1
+    if n_skipped:
+        log(f"  [csv] записано {n_filled} заполнен. строк; пропущено {n_skipped} системных/непереводимых")
     return out, len(entries), n_filled
-
 # ---------------- dotnet CLI ----------------
 def run_dotnet(args):
     r = subprocess.run([DOTTNET, CLI_DOTS] + args, capture_output=True, text=True, timeout=300)
@@ -957,16 +979,18 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None):
     # — пользователь переводит сам (Excel), потом assemble_mod.bat. НЕ применяем.
     if NO_LLM:
         if PRE_FILTER_ENABLED:
+            from validate_translation import is_translatable_text
             reused = 0
             for e in entries:
                 if str(e["i"]) in done and (done[str(e["i"])] or ""):
                     continue
                 en = e.get("original") or ""
-                if not en or prefilter.nothing_to_translate(en):
+                if not is_translatable_text(en):
+                    # системная/непереводимая строка — не даём её в done (и не в CSV)
                     continue
                 ru, _src = prefilter.lookup(en)
-                if ru and str(ru).strip():
-                    done[str(e["i"])] = ru
+                if ru and str(ru).strip() and str(ru).strip().lower() != en.strip().lower():
+                    done[str(e["i"])] = str(ru)
                     reused += 1
             if reused:
                 log(f"  [no-llm] prefill из локальных источников: {reused} строк")
@@ -974,7 +998,8 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None):
         try:
             export_mod_csv(target, entries, done)
             log(f"  [no-llm] CSV готов: {os.path.basename(target)[:-4]}.translate.csv "
-                f"({filled}/{len(entries)} заполнено из кеша — остальное пусто, переведи сам)")
+                f"({filled}/{len(entries)} заполнено из кеша — остальное пусто, переведи сам; "
+                f"системные строки в CSV не вошли)")
             log(f"  [no-llm] после правки: assemble_mod.bat \"{name}\"")
         except Exception as ex:
             log(f"  [no-llm/csv] не смог записать: {ex}")
@@ -1017,8 +1042,19 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None):
         return False
     # 3. apply (only filled rows) + safety check
     CUR["mapref"] = done
-    json.dump([{"i": int(k), "ru": v} for k, v in sorted(done.items()) if v],
+    # 2026-09-22: в кэш (mapping.json) попадают ТОЛЬКО реальные переводы
+    # (has_real_translation: RU непустой и НЕ эхо оригинала). Системные строки
+    # (identifier/onomatopoeia/уже-русский/passthrough) и недопереводённые
+    # (пустые/эхо) в кэш НЕ идут — при apply «строкa не в маппинге» =
+    # сохранение оригинала (apply не трогает её), что и нужно.
+    from validate_translation import has_real_translation
+    _e_by_i = {str(e.get("i")): (e.get("original") or "").strip() for e in entries}
+    _kept = [(k, v) for k, v in done.items() if has_real_translation(_e_by_i.get(k, ""), str(v))]
+    json.dump([{"i": int(k), "ru": v} for k, v in sorted(_kept, key=lambda kv: int(kv[0]))],
               open(mfile, "w", encoding="utf-8"), ensure_ascii=False)
+    _dropped_n = len(done) - len(_kept)
+    if _dropped_n:
+        log(f"  [кэш] {len(_kept)} реал. переводов в кэш; {_dropped_n} строк (системные/пустые/эхо) вынесены из кэша и CSV")
     CUR["mapref"] = None
     if PR is not None: PR.busy("apply .mod…")
     run_dotnet(["apply", target, mfile, target + ".new"])

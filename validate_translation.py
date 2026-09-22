@@ -453,3 +453,86 @@ def validate_batch(strings, rows):
     return rep
 
 
+
+
+def is_translatable_text(en):
+    """«ЕСТЬ ЛИ СМЫСЛ ПЕРЕВОДЧИКУ ТРАТИТЬ ВРЕМЯ ЭТУ СТОРОКУ» — единств. источник
+    для решения «строкa входит в CSV как пустая строка на заполнение».
+
+    Возвращает False (не переводится, НЕ давать для ручной работы):
+      • identifier (имя ассета, entry-ID, @-флаг AI) — системный ключ;
+      • onomatopoeia (крики/скрипы) — звук, LLM правомерно не даёт RU;
+      • already_russian — уже русский текст (перевод не нужен);
+      • passthrough (чистые знаки/числа/кириллица) — нечего переводить.
+
+    Возвращает True: настоящий EN/смешанный текст (1 или более слова),
+    включая одиночные UI-слова «INTERIOR», «FARMING» — такие строки
+    переводы имеют, и их НЕ выкидываем из CSV.
+
+    2026-09-22 (по просьбе пользователя): эта функция — единств. источник
+    решений «что НЕ давать пользователю/кэше как системное». Используется
+    export_mod_csv (пустые строки для ручного заполнения), csv_mod.export_csv,
+    --no-llm prefill, AND (через finished_row) финальным save кэша.
+    """
+    if not isinstance(en, str) or not en.strip():
+        return False
+    if is_identifier(en) or is_onomatopoeia(en) or already_russian(en):
+        return False
+    try:
+        from prefilter import nothing_to_translate
+        if nothing_to_translate(en):
+            return False
+    except Exception:
+        pass
+    return True
+
+
+def finished_row(en, ru):
+    """«Строка ГОТОВА как переведённая (или осознанно пустая)».
+
+    ЕДИНЫЙ фильтр для ЗАПИСИ в кэш (state/<hash>_mapping.json), и как
+    «пустая часть» CSV. ЛОГИКА:
+      • True  = строка должна быть в маппинге (с RU-значением, которое будет
+        применено apply), или в CSV как «пустой» (для ручного заполнения);
+      • False = выкидываем из маппинга И из CSV.
+
+    Правила:
+      1) ru пустое → «пустая строка на заполнение»: True только если en
+         translatable (иначе — системное → выкинуть везде).
+      2) ru != "" И ru == en (echo):
+           • en НЕ translatable → False (системное → выкидываем);
+           • en translatable    → True  (LLM мог не перевести; держим, user правит
+                                         в CSV; apply не будет менять .mod строку).
+      3) ru != "" и ru != en (реальный перевод) → True ВСЕГДА.
+
+    2026-09-22: единый источник «что НЕ писать» в кэш и CSV для системных строк.
+    """
+    if not isinstance(en, str) or not en.strip():
+        return False
+    if ru is None or not str(ru).strip():
+        return is_translatable_text(en)
+    ru = str(ru).strip()
+    if norm(ru) != norm(en):
+        return True
+    # здесь ru == en (эхо) — держим только если en translatable
+    return is_translatable_text(en)
+
+
+def has_real_translation(en, ru):
+    """«Есть ли НАСТОЯЩИЙ перевод» (для кэша mapping.json и apply).
+
+    True только если ru НЕ пустое И НЕ эхо оригинала (RU != EN).
+    Отсюда кэш:
+      • системные строки (identifier/onomatopoeia/already_ru/passthrough) —
+        у них RU либо пусто, либо эхо → НЕ попадают в кэш (и при apply их
+        не «переведут» в битое значение);
+      • пустые/недопереводённые — НЕ в кэше (resume их подхватит заново);
+      • реальный RU-перевод (даже если en — системный) — В кэше (явная
+        переводческая воля — например, человек сам назвал ассет).
+
+    2026-09-22 (по просьбе пользователя): одна точка правды «что писать в
+    кэш», чтобы в mapping.json не попадали системные/непереводимые строки.
+    """
+    if not isinstance(ru, str) or not ru.strip():
+        return False
+    return norm(ru) != norm(en)
