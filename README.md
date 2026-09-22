@@ -152,6 +152,7 @@ move -Force "Pocket Change 2.0.mod.prev" "Pocket Change 2.0.mod"
 ```
 # перевести
 ./translate_mods.bat "имя" | --force | --no-llm | --list-file f.txt | --include-excluded
+./translate_mods.bat --file "<путь>\к .mod" --label "имя"   # произвольный .mod-файл
 # выгрузить CSV
 ./export_mod_csv.bat "имя"
 # пересобрать из CSV
@@ -172,6 +173,15 @@ py .\csv_mod.py --list
 ./revert_mods.bat "имя" | --dry-run | --list-file f.txt | --list | (все, y/N)
 ./revert_mods.bat --file "<путь>\к .mod"   # kenshi\data\*.mod, kenshi\mods\...
 ./revert_mods.bat --clean-orphans [--dry-run]
+# перевести произвольный .mod-файл прямо по пути (не только из Workshop)
+./translate_mods.bat --file "<путь>\к .mod" --label "имя метки"   # произвольный .mod-файл
+# чистка: кеш state/ + *.translate.csv
+./clean_caches.bat                 # dry-run: показать, что будет удалено
+./clean_caches.bat --yes           # удалить (после — перевод начнётся с нуля)
+./clean_caches.bat --state-only | --csv-only
+# вычистить системные строки из старых кешей (без удаления кешей)
+python sanitize_caches.py --list   # отчёт
+python sanitize_caches.py          # удалить из маппингов, бэкап .pre_optionA
 ```
 
 ---
@@ -440,6 +450,7 @@ prefilter (reuse без LLM) и словарь работают как есть.
 | `--no-llm` | **Не ходить в LLM** — только извлечь строки и создать `<имя>.translate.csv` (пустая колонка RU для ручного перевода). Затем правь Excel → `./assemble_mod.bat "имя"` |
 | `--include-excluded` | Переводить даже моды из `exclude.txt` |
 | `--list-file файл.txt` | Список модов (одна строка = имя-или-ID) |
+| `--file <путь> --label <имя>` | Перевести **произвольный `.mod`-файл** прямо по пути (не только из Workshop: `kenshi\data\*.mod`, `kenshi\mods\<мод>\*.mod`, и т.п.; `--label` — как назвать результат в кеше) |
 
 Примеры:
 ```
