@@ -521,18 +521,21 @@ def finished_row(en, ru):
 def has_real_translation(en, ru):
     """«Есть ли НАСТОЯЩИЙ перевод» (для кэша mapping.json и apply).
 
-    True только если ru НЕ пустое И НЕ эхо оригинала (RU != EN).
-    Отсюда кэш:
-      • системные строки (identifier/onomatopoeia/already_ru/passthrough) —
-        у них RU либо пусто, либо эхо → НЕ попадают в кэш (и при apply их
-        не «переведут» в битое значение);
-      • пустые/недопереводённые — НЕ в кэше (resume их подхватит заново);
-      • реальный RU-перевод (даже если en — системный) — В кэше (явная
-        переводческая воля — например, человек сам назвал ассет).
+    True только если:
+      • ru НЕ пустое И НЕ эхо оригинала (RU != EN);
+      • en НЕ идентифицирован как системный (identifier / onomatopoeia /
+        already_russian / passthrough) — такие строки выкидываем из кэша даже
+        при реálnом переводе: «системные строки не записываются в кэш» — явная
+        просьба пользователя. Если человек ВСЁ-ТАКИ намеренно переименовал
+        ассет (pathological case) — C#-guard (Program.cs, cross-ref + type)
+        защищает .mod от сломанной ссылки.
 
-    2026-09-22 (по просьбе пользователя): одна точка правды «что писать в
-    кэш», чтобы в mapping.json не попадали системные/непереводимые строки.
+    2026-09-22: единая точка правды «что писать в кэш».
     """
     if not isinstance(ru, str) or not ru.strip():
         return False
-    return norm(ru) != norm(en)
+    if norm(ru) == norm(en):
+        return False
+    if not is_translatable_text(en):
+        return False
+    return True
