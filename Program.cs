@@ -58,6 +58,22 @@ static List<Entry> ExtractEntries(ModData data)
         }
     }
     int xrefExcluded = 0, animKeyExcluded = 0;
+    // Heuristic (2026-09-22, «Buried Treasure» incident, Bury Your Treasure mod):
+    // an xref string (both record.Name and a field value) is a KEY (do not translate)
+    // only if it LOOKS like an identifier: underscore/dash (wood_dex_dummy_pole,
+    // house03-base) or a no-space token with digits (T34, Mk.II). Xref strings that
+    // look like display text (spaces, no _) are internal name<->field pairs (building
+    // groups, quest flags) — both sides live in the same .mod and are translated
+    // consistently together (DoApply applies ONE translation to all equal originals).
+    // Animation-type names stay excluded unconditionally (external .ani refs).
+    static bool IsKeyLike(string? v)
+    {
+        if (v == null) return true;
+        var s = v.Trim();
+        if (s.Contains('_') || s.Contains('-')) return true;
+        if (s.Any(c => c >= '0' && c <= '9') && !s.Any(char.IsWhiteSpace)) return true;
+        return false;
+    }
     // Record types whose Name is ALWAYS an engine key (animation asset refs),
     // never user-visible text. (KenshiCore.ModTypeCodes: 5=ANIMAL_ANIMATION, 24=ANIMATION,
     // 105=ANIMATION_EVENT, 112=ANIMATION_FILE, 17=COMBAT_TECHNIQUE)
@@ -83,7 +99,7 @@ static List<Entry> ExtractEntries(ModData data)
         {
             // OPTION A: skip names that are engine keys (anim types) or cross-referenced strings
             if (keyNameTypes.Contains(record.RecordType)) { animKeyExcluded++; continue; }
-            if (IsXref(name, nameSet, valueSet)) { xrefExcluded++; continue; }
+            if (IsXref(name, nameSet, valueSet) && IsKeyLike(name)) { xrefExcluded++; continue; }
             entries.Add(new Entry { i = entries.Count, key = $"record{record.StringId}_name", original = name });
         }
         if (record.StringFields != null)
@@ -92,8 +108,9 @@ static List<Entry> ExtractEntries(ModData data)
                 var v = kvp.Value ?? "";
                 if (string.IsNullOrWhiteSpace(v) || Entry.Blacklist.Contains(kvp.Key) || Entry.KeyBlacklist.Contains(kvp.Key)) continue;
                 // OPTION A: also skip field values that are cross-referenced names
-                //   (SFX event → action name, building category → category record, ...)
-                if (IsXref(v, nameSet, valueSet)) { xrefExcluded++; continue; }
+                //   AND look like identifiers (SFX/bone/mesh keys). Display-text xrefs
+                //   (building groups etc.) are translated — both sides move together.
+                if (IsXref(v, nameSet, valueSet) && IsKeyLike(v)) { xrefExcluded++; continue; }
                 entries.Add(new Entry { i = entries.Count, key = $"record{record.StringId}_{kvp.Key}", original = v });
             }
     }
