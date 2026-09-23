@@ -32,6 +32,7 @@ import os, sys, json, re, glob, argparse, subprocess
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 import kmt_paths  # resolve paths (config.json-driven)
+import textutil  # parse_po_file: единый парсер .po
 
 CFG = json.load(open(os.path.join(BASE, "config.json"), encoding="utf-8"))
 P   = CFG["paths"]
@@ -277,16 +278,38 @@ def ru_rows_for_needle(h, needle):
 
 
 def _attach_ru(hits, needle):
-    """Для hits в .mod-файлах приписать 'ru_rows' — перевод найденной строки из кеша."""
+    """Для .mod-hits приписать 'ru_rows' (EN, RU, Поле):
+    1) наш кеш (state/), если есть — + пустые RU заполняем из .po локации;
+    2) нет кеша — EN из C#-парсера (чистый текст, не бинарный мусор) +
+       RU из .po локации (свой .po мода, затем .po игры)."""
     by_path = {}
+
+    def resolve(p):
+        if p in by_path:
+            return by_path[p]
+        rows = []
+        chash = _hash_for_mod(p)
+        if chash:
+            rows = ru_rows_for_needle(chash, needle)
+        po_idx = _po_index_for_mod(p)
+        if po_idx and rows:
+            rows = [(en, (ru or po_idx.get(_po_norm(en)) or ""), fld)
+                    for en, ru, fld in rows]
+        if not rows and po_idx:
+            nd = _po_norm(needle)
+            if nd:
+                fm = _field_map_for_mod(p)
+                for en, fld in sorted(fm.items(), key=lambda kv: len(kv[0])):
+                    if nd in en:
+                        rows.append((en, po_idx.get(_po_norm(en), ""), fld))
+        by_path[p] = rows
+        return rows
+
     for h in hits:
         p = h.get("path")
         if not p or os.path.splitext(p)[1].lower() != ".mod":
             continue
-        if p not in by_path:
-            chash = _hash_for_mod(p)
-            by_path[p] = ru_rows_for_needle(chash, needle) if chash else []
-        h["ru_rows"] = by_path[p]
+        h["ru_rows"] = resolve(p)
 
 
 _CSHARP_CACHE = {}   # path(normcase) -> {norm_orig: короткое_имя_поля}
@@ -376,6 +399,117 @@ def _field_for_hit(path, needle):
         if best is None or len(orig) < best[0]:
             best = (len(orig), field)
     return best[1] if best else ""
+
+
+# ============================== .po (gettext) lookup ==========================
+# Парсинг .po: textutil.parse_po_file (единый источник, используется и
+# po_hints, и prefilter). Здесь только мемоизация + index для lookup.
+_POIDX_MEMO = {}      # mod-path -> {norm(msgid) -> ru}
+_PO_PAIRS_MEMO = {}   # po-path -> [(en, ru)]
+
+def _po_norm(s):
+    return re.sub(r"\s+", " ", (s or "")).strip().lower()
+
+
+def _po_pairs(path):
+    """[(en, ru)] пар из файла .po (только с непустым RU), мемоизировано."""
+    key = os.path.normcase(os.path.abspath(os.fspath(path)))
+    if key in _PO_PAIRS_MEMO:
+        return _PO_PAIRS_MEMO[key]
+    try:
+        pairs = list(textutil.parse_po_file(path))
+    except Exception:
+        pairs = []
+    _PO_PAIRS_MEMO[key] = pairs
+    return pairs
+
+
+def _po_indexes(roots):
+    """{norm(msgid): ru} по .po из kаталогов; ru_RU приоритетнее en/остальных."""
+    files = []
+    for root in roots:
+        if not root or not os.path.isdir(root):
+            continue
+        for dp, dn, fn in os.walk(root):
+            for f in fn:
+                if f.lower().endswith(".po"):
+                    files.append(os.path.join(dp, f))
+
+    def _prio(p):
+        norm = p.lower().replace("\\", "/")
+        score = 0
+        if "ru_ru" in norm:
+            score -= 100
+        if "en_gb/" in norm or "en_us/" in norm:
+            score += 50
+        return (score, norm)
+
+    files.sort(key=_prio)
+    idx = {}
+    for p in files:
+        for en, ru in _po_pairs(p):
+            if not en or not ru:
+                continue
+            e = _po_norm(en)
+            if e and e not in idx:
+                idx[e] = ru
+    return idx
+
+
+def _po_index_for_mod(mod_path):
+    """RU-индекс для .mod: свой locale/ (Workshop-мод) + locale игры (fallback)."""
+    key = os.path.normcase(os.path.abspath(os.fspath(mod_path)))
+    if key in _POIDX_MEMO:
+        return _POIDX_MEMO[key]
+    ws = os.path.normcase(os.path.abspath(WORKSHOP))
+    game_roots = [os.path.join(GAME, "locale"),
+                  os.path.join(GAME, "RE_Kenshi", "locale"),
+                  os.path.join(GAME, "mods")]
+    d = os.path.dirname(mod_path)
+    if key.startswith(ws + os.sep):
+        roots = [d] + game_roots
+    else:
+        roots = game_roots + [d]
+    idx = _po_indexes(roots)
+    _POIDX_MEMO[key] = idx
+    return idx
+
+
+def po_rows(hits, needle, cap=200):
+    """Слой 5 (.po): чистые пары EN->RU, где needle в msgid или msgstr."""
+    nd = _po_norm(needle)
+    files, seen_f = [], set()
+    for h in hits:
+        p = h.get("path")
+        if not p:
+            continue
+        q = os.path.normcase(p)
+        if q not in seen_f:
+            seen_f.add(q)
+            files.append(p)
+    # Для слоя 5 хотим видеть ВСЕ строки (с RU и без) — используем
+    # textutil.parse_po_file_all. (parse_po_file фильтрует «без RU»)
+    rows, seen = [], set()
+    for p in files:
+        name = _mod_name_for_path(p)
+        try:
+            pairs = list(textutil.parse_po_file_all(p))
+        except Exception:
+            continue
+        for en, ru in pairs:
+            if not en or not nd:
+                continue
+            if nd not in _po_norm(en) and nd not in _po_norm(ru):
+                continue
+            key = (en, ru, name)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append((en, ru, "", name))
+            if len(rows) >= cap:
+                return rows
+    rows.sort(key=lambda t: _cwidth(t[0]))
+    return rows
 
 
 def _one_line(s, width=160):
@@ -631,7 +765,7 @@ def main():
 
     # --- слои 5-6-7: вспомогательные (.po / .desc / .dll) — тоже таблицей ---
     _print_layer("слой 5: .po RU-локализация", len(hits["po"]),
-                 snippet_rows(hits["po"]), cap=cap)
+                 po_rows(hits["po"], needle), show_all=args.all, cap=cap)
     _print_layer("слой 6: описания (.txt)", len(hits["desc"]),
                  snippet_rows(hits["desc"]), cap=cap)
     if args.dll:

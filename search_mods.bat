@@ -20,6 +20,9 @@ rem  Results are printed as a table: EN | RU | Field | Mod.
 rem  "Field" = name of the field inside the .mod record (name / text0 /
 rem  building category / description...).  "name"-like fields are engine
 rem  keys - do NOT translate.  Comes from state cache or .mod parser (C#).
+rem  RU column sources (priority): state cache > mod's own locale/ru_RU/*.po
+rem  (if the author shipped one) > the game's own Russian locale.
+rem  The .po layer shows CLEAN msgid -> msgstr pairs (all languages), not raw text.
 rem  The cache layer (state/) is hidden by default too because it only
 rem  contains already-translated rows; --all shows it.
 rem  The "Translatable files" list (for translation launch) also omits mods

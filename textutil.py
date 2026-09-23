@@ -56,20 +56,109 @@ def cyrillic_slash_tags(s):
     return out
 
 # ---------- .PO (локализация): msgid/msgstr ---------------------------------
-# Одна регулярка на парсер, не два. Используется и prefilter (reuse pool),
-# и po_hints (динамич. подсказки).
+# Единый источник парсинга .po. Используется prefilter (reuse pool),
+# po_hints (динамич. подсказки), search_mods (слой 5 + RU-фолбэк .mod-слоёв).
+#
+# PO_PAIR_RE — ЛЕГКАЯ регулярка только для ОДНОСТРОЧНЫХ пар (backward-compat);
+# для полных пар (многолинейные msgid/msgstr) — parse_po_file.
 PO_PAIR_RE = re.compile(r'msgid\s+"([^"\n]+)"\s*\nmsgstr\s+"([^"\n]*)"')
 
+def _po_unquote(v):
+    """Убирает внешние кавычки и разворачивает gettext-escape-ы в пробелы."""
+    v = (v or "").strip()
+    if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
+        v = v[1:-1]
+    v = v.replace('\\n', ' ').replace('\\t', ' ').replace('\\"', '"')
+    v = re.sub(r"\s+", " ", v).strip()
+    return v
+
+
+def _parse_po_lines(lines):
+    """State-machine парсер .po: yield (msgid, msgstr) пар.
+    Поддерживает: msgctxt, многолинейные "..."-продолжения msgid/мs str,
+    msgstr[N] (берём [0]), комментарии # / #. / #: / #| игнорирует,
+    пустой msgid ('' заголовок) пропускает.
+    Возвращает только пары, у которых НЕ пустые msgid и msgstr.
+    """
+    out = []
+    cur_id = None
+    cur_str = None
+    last_field = None  # 'id' | 'str' | None
+
+    def flush():
+        nonlocal cur_id, cur_str
+        if cur_id is not None and cur_id.strip():
+            out.append((cur_id.strip(), (cur_str or "").strip()))
+        cur_id = None
+        cur_str = None
+
+    for raw in lines:
+        ln = raw.strip()
+        if not ln:
+            continue
+        if ln.startswith("#"):
+            continue  # комментарии любого вида: #, #., #:, #|
+        if ln.startswith('"'):
+            if last_field == "id" and cur_id is not None:
+                cur_id += " " + _po_unquote(ln)
+            elif last_field == "str" and cur_str is not None:
+                cur_str = ((cur_str or "") + " " + _po_unquote(ln)).strip()
+            continue
+        if ln.startswith("msgid"):
+            flush()
+            rest = ln[5:].strip()
+            cur_id = _po_unquote(rest) if rest and rest != '""' else ""
+            cur_str = None
+            last_field = "id"
+            continue
+        if ln.startswith("msgstr"):
+            if ln.startswith("msgstr["):
+                if cur_str not in (None, ""):
+                    continue  # есть msgstr[0], плюрал не трогаем
+                rest = (ln.split("]", 1)[1] if "]" in ln else "").strip()
+            else:
+                rest = ln[6:].strip()
+            cur_str = _po_unquote(rest) if rest and rest != '""' else ""
+            last_field = "str"
+            continue
+    flush()
+    return out
+
+
 def parse_po_file(path):
-    """Read a .po file, yield (en, ru) pairs (first msgid/msgstr per entry)."""
+    """Read a .po file, yield (en, ru) pairs. ПОЛНЫЙ парсер:
+    - многострочные msgid/msgstr (продолжения через "..."-строки)
+    - msgstr[N] (берём [0])
+    - пропускает пустые msgid (заголовок) и msgid==msgstr (нет перевода)
+    Возвращает только пары с непустым RU."""
     try:
         txt = open(path, encoding="utf-8", errors="replace").read()
     except Exception:
         return
+    out = _parse_po_lines(txt.splitlines())
     seen = set()
-    for m in PO_PAIR_RE.finditer(txt):
-        en, ru = m.group(1).strip(), m.group(2).strip()
+    for en, ru in out:
         if not en or not ru:
+            continue
+        k = en.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        yield en, ru
+
+
+def parse_po_file_all(path):
+    """Как parse_po_file, но ВСЕ пары (включая msgid==msgstr) для ранжирования.
+    Используйте, когда нужно видеть, что строка ВСТРЕЧАЕТСЯ в .po, даже
+    если в .po нет русского перевода (важно для prefilter «уже в .po»)."""
+    try:
+        txt = open(path, encoding="utf-8", errors="replace").read()
+    except Exception:
+        return
+    out = _parse_po_lines(txt.splitlines())
+    seen = set()
+    for en, ru in out:
+        if not en:
             continue
         k = en.lower()
         if k in seen:
