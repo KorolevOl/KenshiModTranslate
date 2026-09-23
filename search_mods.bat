@@ -16,6 +16,10 @@ rem  prints its TRANSLATION (EN -> RU) from the state cache, whichever side
 rem  (EN or RU) you searched by.
 rem  By default rows that ALREADY have a translation are HIDDEN (the point is
 rem  to find what still needs translating).  Add  --all  to show everything.
+rem  The cache layer (state/) is hidden by default too because it only
+rem  contains already-translated rows; --all shows it.
+rem  The "Translatable files" list (for translation launch) also omits mods
+rem  where every matched row is already translated (use --all to include).
 rem  --cap N limits table rows (default 20).
 rem  After search you get a numbered list - type mod numbers
 rem  (comma/space separated) to start translation of those mods.

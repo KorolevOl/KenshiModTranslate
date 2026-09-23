@@ -329,9 +329,19 @@ def render_table(rows, headers=("EN", "RU", "Мод"), cap=20, cell_width=60):
 
 
 def _mod_name_for_path(path):
-    """Имя мода из .mod-пути (basename без расширения)."""
+    """Идентификатор в колонке 'Мод'.
+    .mod → имя файла без расширения.
+    .po/.txt/.dll → локали (xx_YY) из пути, если есть, иначе имя файла.
+    Чтобы в .po-слое не сливались все языки в одно 'main'.
+    """
     base = os.path.basename(path or "")
-    return os.path.splitext(base)[0] or base
+    name = os.path.splitext(base)[0] or base
+    ext = os.path.splitext(base)[1].lower()
+    if ext in (".po", ".txt", ".dll"):
+        for seg in re.split(r"[\\/]", path or ""):
+            if re.fullmatch(r"[A-Za-z]{2}_[A-Z]{2}", seg or ""):
+                return f"{seg}/{name}"
+    return name
 
 
 def layer_rows(hits, needle, cap=25):
@@ -416,6 +426,23 @@ def cache_rows(hits):
     return out
 
 
+def snippet_rows(hits):
+    """(EN=фрагмент, RU='', Мод) для вспомогательных слоёв (.po/.desc/.dll)."""
+    out, seen = [], set()
+    for h in hits:
+        sn = (h.get("snippet") or "").strip()
+        if not sn:
+            continue
+        name = _mod_name_for_path(h.get("path") or "")
+        key = (sn, "", name)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(key)
+    out.sort(key=lambda t: (_cwidth(t[0]), _cwidth(t[1]), _cwidth(t[2])))
+    return out
+
+
 def _print_layer(title, n_hits, rows, show_all=False, cap=20):
     """Една печать для слоя: таблица EN|RU|Мод.
     show_all=False (дефолт) — скрывает строки с непустым RU (уже переведено)
@@ -474,8 +501,18 @@ def main():
         include_dll=args.dll,
     )
 
-    _print_layer("слой 1: кеш (state/)", len(hits["cache"]),
-                 cache_rows(hits["cache"]), show_all=args.all, cap=cap)
+    # --- слой 1: кеш (state/) ---
+    # Там лежат ТОЛЬКО переведённые строки (mapping = переведённые, непереведённые
+    # туда не попадают). В режиме «искать непереведённое» (по умолчанию) слой
+    # бесполезен, поэтому СКРЫТ целиком — виден только с --all.
+    if hits["cache"] and not args.all:
+        print(f"\n-- слой 1: кеш (state/) — {len(hits['cache'])} совпадений — скрыт по умолчанию --")
+        print("  (там только уже переведённые строки — --all, чтобы показать)")
+    else:
+        _print_layer("слой 1: кеш (state/)", len(hits["cache"]),
+                     cache_rows(hits["cache"]), show_all=True, cap=cap)
+
+    # --- слои 2-4: .mod (Workshop / data / mods) ---
     for key, label in (("workshop", "слой 2: .mod в Workshop"),
                        ("game_data", "слой 3: .mod в игре (data/)"),
                        ("game_mods", "слой 4: .mod в игре (mods\\)")):
@@ -483,47 +520,44 @@ def main():
                      layer_rows(hits[key], needle),
                      show_all=args.all, cap=cap)
 
-    if hits["po"]:
-        print(f"\n-- слой 5: .po RU-локализация — {len(hits['po'])} совпадений --")
-        for h in hits["po"][:20]:
-            rel = os.path.relpath(h["path"], GAME) if h["path"].startswith(GAME) else h["path"]
-            print(f"  [PO] {rel}")
-            print(f"       ...{h['snippet']}...")
-        if len(hits["po"]) > 20:
-            print(f"  ... (+{len(hits['po']) - 20} ещё)")
-    else:
-        print(f"\n-- слой 5: .po RU-локализация — 0 --")
-
-    if hits["desc"]:
-        print(f"\n-- слой 6: описания (.txt) — {len(hits['desc'])} совпадений --")
-        for h in hits["desc"][:20]:
-            wid = os.path.basename(os.path.dirname(h["path"]))
-            print(f"  [DESC] {wid}/{os.path.basename(h['path'])}")
-            print(f"       ...{h['snippet']}...")
-        if len(hits["desc"]) > 20:
-            print(f"  ... (+{len(hits['desc']) - 20} ещё)")
-    else:
-        print(f"\n-- слой 6: описания (.txt) — 0 --")
-
+    # --- слои 5-6-7: вспомогательные (.po / .desc / .dll) — тоже таблицей ---
+    _print_layer("слой 5: .po RU-локализация", len(hits["po"]),
+                 snippet_rows(hits["po"]), cap=cap)
+    _print_layer("слой 6: описания (.txt)", len(hits["desc"]),
+                 snippet_rows(hits["desc"]), cap=cap)
     if args.dll:
-        if hits["dll"]:
-            print(f"\n-- слой 7: .dll — {len(hits['dll'])} совпадений --")
-            for h in hits["dll"][:20]:
-                rel = os.path.relpath(h["path"], WORKSHOP)
-                print(f"  [DLL/WS] {rel}")
-                print(f"     ...{h['snippet']}...")
-            if len(hits["dll"]) > 20:
-                print(f"  ... (+{len(hits['dll']) - 20} ещё)")
-        else:
-            print(f"\n-- слой 7: .dll — 0 --")
+        _print_layer("слой 7: .dll", len(hits["dll"]),
+                     snippet_rows(hits["dll"]), cap=cap)
 
     # Build translatable list: deduplicate by path (normcase); only .mod files
+    # По умолчанию включаем ТОЛЬКО файлы, где есть НЕРЕВЕДЁННЫЕ строки (RU пустая).
+    # С --all — все файлы, как раньше.
+    def _has_untranslated(hits_kind):
+        """True, если в hits есть хотя бы одна строка без RU."""
+        for h in hits_kind:
+            rows = h.get("ru_rows") or []
+            if rows:
+                for en, ru in rows:
+                    if not (ru and ru.strip()):
+                        return True
+            elif h.get("snippet"):
+                return True  # нет кэша — значит есть непереведённые
+        return False
+
     seen = set()
     translatable = []
+    excluded = []
     for kind in ("workshop", "game_data", "game_mods"):
+        file_hit_groups = {}
         for h in hits[kind]:
-            p = h["path"]
-            key = os.path.normcase(os.path.abspath(p))
+            key = os.path.normcase(os.path.abspath(h["path"]))
+            file_hit_groups.setdefault(key, []).append(h)
+        for key, group in file_hit_groups.items():
+            p = group[0]["path"]
+            needs = _has_untranslated(group)
+            if not args.all and not needs:
+                excluded.append(p)
+                continue
             if key in seen:
                 continue
             seen.add(key)
@@ -531,16 +565,26 @@ def main():
                 "kind": kind,
                 "label": f"[{kind}] {p}",
                 "path": p,
-                "n_snippets": sum(1 for x in hits[kind] if x["path"] == p),
+                "n_snippets": len(group),
+                "untranslated": needs,
             })
 
     n_total_hits = (len(hits["cache"]) + sum(len(hits[k]) for k in
         ("workshop", "game_data", "game_mods", "po", "desc", "dll")))
     print(f"\n=== ИТОГО: {n_total_hits} совпадений, из них {len(translatable)} файлов можно перевести ===")
 
-    if not translatable or args.no_translate:
-        if args.no_translate and translatable:
+    if not args.all and excluded:
+        print(f"(исключено {len(excluded)} файл(ов), где всё уже переведено — --all, чтобы включить)")
+
+    if not translatable:
+        if args.no_translate:
             print(f"\n(--no-translate: перевод не запускается)")
+        else:
+            print("\n(все найденные файлы уже переведены — нечего переводить; --all для показа всего)")
+        return
+
+    if args.no_translate:
+        print(f"\n(--no-translate: перевод не запускается)")
         return
 
     # Show numbered list
