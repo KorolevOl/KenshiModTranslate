@@ -11,6 +11,12 @@ search_mods.py — поиск фразы по модам Kenshi и по встр
   6) описания модов (desc.txt / *.txt в корневой папке мода, Workshop)
   7) .dll (бинарный поиск, --dll)
 
+Таблицы: EN | RU | Поле | Мод. «Поле» — имя поля .mod-записи
+(description / name / building category / text0 / …): 'name'-подобные —
+имена-ключи рекордов (переводить нельзя), остальное — отображаемый текст.
+Имя поля достаётся из кеша (key записи) либо C#-парсером .mod
+(kenshi-modtranslate extract) для чистых (откатанных) модов.
+
 Каждый найденный .mod-файл получает номер. После выдачи результатов —
 пользователь вводит номера через запятую или пробел (или 'a' = все, 'q' = выход)
 и перевод запускается прямо из search_mods.py (subprocess translate_mods.py --file).
@@ -122,6 +128,7 @@ def iter_state_hits(needle, want_en, want_ru):
         except Exception:
             continue
         emap = {str(e.get("i")): (e.get("original") or e.get("t") or "") for e in entries}
+        ekeys = {str(e.get("i")): (e.get("key") or "") for e in entries}
         for m in mapping:
             i = str(m.get("i"))
             en = emap.get(i, "")
@@ -129,6 +136,7 @@ def iter_state_hits(needle, want_en, want_ru):
             en_hit = want_en and nd in norm(en)
             ru_hit = want_ru and nd in norm(ru)
             if en_hit or ru_hit:
+                _entry_key = ekeys.get(i, "")
                 txt = en if en_hit else ru
                 t = " ".join((txt or "").split())
                 pos = t.lower().find(nd)
@@ -140,6 +148,7 @@ def iter_state_hits(needle, want_en, want_ru):
                     "row": i,
                     "en": en,
                     "ru": ru,
+                    "field": _short_key(_entry_key),
                     "snippet": make_snippet(t, pos, len(nd)),
                 }
 
@@ -261,7 +270,7 @@ def ru_rows_for_needle(h, needle):
                 if not en:
                     continue
                 if nd in norm(en) or (ru and nd in norm(ru)):
-                    out.append((en, ru))
+                    out.append((en, ru, _short_key(e.get("key") or "")))
     out.sort(key=lambda t: len(t[0]))  # короткие (специфичные) строки выше
     _RUROWS_MEMO[key] = out
     return out
@@ -280,6 +289,95 @@ def _attach_ru(hits, needle):
         h["ru_rows"] = by_path[p]
 
 
+_CSHARP_CACHE = {}   # path(normcase) -> {norm_orig: короткое_имя_поля}
+
+def _short_key(raw_key):
+    """Короткое имя поля из key записи. Два формата key:
+       NEW (C#):   record{ID}_<поле>                    → <поле>
+                    record102_name                      → name
+                    record102_building category         → building category
+       OLD (кеш):  record{ID}-<owner>.<поле>             → <поле>
+                    record1886-gamedata.base_name        → name
+                    record1531904-BuryYourTreasure.mod_building category → building category
+    """
+    k = (raw_key or "").strip()
+    if not k:
+        return ""
+    if k == "description":
+        return "description"
+    if not k.startswith("record"):
+        return k
+    # OLD (кеш): record{ID}-<мод>.mod_<поле> / record{ID}-<owner>.<поле>
+    #   маркер — дефис после ID; поле = фрагмент после ПОСЛЕДНЕГО _
+    if "-" in k:
+        tail = k[k.find("-") + 1:]
+        if "_" in tail:
+            tail = tail.rsplit("_", 1)[1]
+    # NEW (C#-парсер): record{ID}_<поле> — поле после ПЕРВОГО _
+    elif "_" in k:
+        tail = k.split("_", 1)[1]
+    else:
+        return k
+    if tail.startswith("base_"):
+        tail = tail[5:]
+    return tail
+
+
+def _field_map_for_mod(path):
+    """{norm(EN-текст): имя_поля} из C#-парсера (kenshi-modtranslate extract).
+    Кэшируется по файлу; один вызов на файл (~0.1-0.2 c)."""
+    key = os.path.normcase(os.path.abspath(os.fspath(path)))
+    if key in _CSHARP_CACHE:
+        return _CSHARP_CACHE[key]
+    m = {}
+    try:
+        import time
+        cfg = json.load(open(os.path.join(BASE, "config.json"), encoding="utf-8"))
+        DOTNET = kmt_paths.resolve(cfg["paths"]["dotnet"])
+        CLI = kmt_paths.resolve(cfg["paths"]["modtranslate_cli"])
+        import tempfile
+        fd, tmp = tempfile.mkstemp(suffix=".json", prefix="_kmt_keys_")
+        os.close(fd)
+        r = subprocess.run([DOTNET, CLI, "extract", os.fspath(path), tmp],
+                           capture_output=True, timeout=30)
+        if r.returncode == 0:
+            data = json.load(open(tmp, encoding="utf-8"))
+            for e in data:
+                orig = (e.get("original") or "").strip()
+                if not orig:
+                    continue
+                nm = orig.lower()
+                if nm not in m:
+                    m[nm] = _short_key(e.get("key") or "")
+    except Exception:
+        m = {}
+    _CSHARP_CACHE[key] = m
+    return m
+
+
+def _field_for_hit(path, needle):
+    """Имя поля строки в .mod (через C#-парсер кеша или новый extract).
+    1) точное совпадение: needle = целому EN-тексту записи → его поле;
+    2) иначе — самая КОРОтКАЯ запись, содержащая needle (чем короче строка,
+       тем конкретнее поле: 'Beak Thing' попадает в name='Beak Thing', а не
+       в длинный description). Пусто — если ни одна запись не содержит."""
+    m = _field_map_for_mod(path)
+    if not m:
+        return ""
+    nd = norm(needle)
+    if not nd:
+        return ""
+    if nd in m:
+        return m[nd] or ""
+    best = None  # (len(orig), field)
+    for orig, field in m.items():
+        if not field or nd not in orig:
+            continue
+        if best is None or len(orig) < best[0]:
+            best = (len(orig), field)
+    return best[1] if best else ""
+
+
 def _one_line(s, width=160):
     """Схлопнуть переносы в одну строку, при необходимости урезать."""
     s = re.sub(r"[\r\n\t ]+", " ", (s or "")).strip()
@@ -288,7 +386,7 @@ def _one_line(s, width=160):
     return s
 
 
-# ============================== TABLITSA (tabulate) ===========================
+# ============================== ТАБЛИЦА (tabulate) ===========================
 def _cwidth(s):
     """Display-width: ASCII/кириллица = 1, CJK = 2 (для сортировки)."""
     s = s or ""
@@ -312,17 +410,18 @@ def _clip(s, width):
     return s if _cwidth(s) <= width else s[: width - 1] + "…"
 
 
-def render_table(rows, headers=("EN", "RU", "Мод"), cap=20, cell_width=60):
-    """Таблица (EN | RU | Мод) через `tabulate`. rows: [(en, ru, name), ...].
-    Возвращает текст таблицы; >cap — первые cap + пометка '(+N ещё)'.
-    """
+def render_table(rows, headers=("EN", "RU", "Поле", "Мод"), cap=20, cell_width=60):
+    """Таблица (EN | RU | Поле | Мод) через `tabulate`.
+    rows: [(en, ru, поле, имя), ...]; >cap — первые cap + '(+N ещё)'."""
     if not rows:
         return "  (ничего не найдено)"
     from tabulate import tabulate  # лёгкий, уже в requirements.txt
     shown = rows[:cap]
     data = [[_clip(e or "", cell_width), _clip(ru or "", cell_width),
-             _clip(m or "(кэш)", cell_width)] for (e, ru, m) in shown]
-    txt = tabulate(data, headers=list(headers), tablefmt="fancy_grid")
+             _clip(f or "", 24), _clip(m or "(кэш)", cell_width)]
+            for (e, ru, f, m) in shown]
+    txt = tabulate(data, headers=list(headers), tablefmt="fancy_grid",
+                   colalign=("left", "left", "left", "left"))
     if len(rows) > cap:
         txt += f"\n  (+{len(rows) - cap} ещё — показаны первые {cap})"
     return txt
@@ -345,18 +444,27 @@ def _mod_name_for_path(path):
 
 
 def layer_rows(hits, needle, cap=25):
-    """Из .mod-hits собрать строки таблицы (EN, RU, Мод).
-    Если у мода есть кэш — строки из кэша (EN/RU пары);
-    иначе EN = фрагмент из файла, RU = ''. Dedupe по (EN, RU, mod)."""
+    """(EN, RU, ПОЛЕ, Мод) из .mod-hits.
+    Поле: из кеша (ru_rows, точный key), а для .mod без кеша — из C#-парсера
+    (kenshi-modtranslate extract: exact match → короткая строка с needle).
+    Для .po/.desc/.dll Поле = '' (там нет .mod-полей)."""
     seen = {}
     for h in hits:
         p = h.get("path")
         if not p:
             continue
         name = _mod_name_for_path(p)
-        for en, ru in (h.get("ru_rows") or [((h.get("snippet") or ""), "")]):
-            key = (en, ru, name)
-            seen.setdefault(key, name)
+        rows_of_hit = h.get("ru_rows")
+        if rows_of_hit:
+            for en, ru, fld in rows_of_hit:
+                seen.setdefault((en, ru, fld, name), name)
+        else:
+            sn = (h.get("snippet") or "")
+            if os.path.splitext(p)[1].lower() == ".mod":
+                fld = _field_for_hit(p, needle)
+            else:
+                fld = ""
+            seen.setdefault((sn, "", fld, name), name)
     rows = list(seen.keys())
     rows.sort(key=lambda t: (_cwidth(t[0]), _cwidth(t[1]), _cwidth(t[2])))
     return rows
@@ -409,7 +517,7 @@ def norm_ignoring_ws(s):
 
 
 def cache_rows(hits):
-    """(EN, RU, Мод) из кэш-слоя, дедуп + сортировка."""
+    """(EN, RU, Поле, Мод) из кэш-слоя, дедуп + сортировка."""
     out, seen = [], set()
     for h in hits:
         mod = h.get("mod") or "(кэш)"
@@ -417,11 +525,12 @@ def cache_rows(hits):
             mod = mod[0] if mod else "(кэш)"
         en = (h.get("en") or "").strip()
         ru = (h.get("ru") or "").strip()
-        key = (en, ru, mod)
+        fld = (h.get("field") or "").strip()
+        key = (en, ru, fld, mod)
         if key in seen:
             continue
         seen.add(key)
-        out.append((en, ru, mod))
+        out.append((en, ru, fld, mod))
     out.sort(key=lambda t: (_cwidth(t[0]), _cwidth(t[1]), _cwidth(t[2])))
     return out
 
@@ -434,7 +543,7 @@ def snippet_rows(hits):
         if not sn:
             continue
         name = _mod_name_for_path(h.get("path") or "")
-        key = (sn, "", name)
+        key = (sn, "", "", name)
         if key in seen:
             continue
         seen.add(key)
@@ -458,13 +567,13 @@ def _print_layer(title, n_hits, rows, show_all=False, cap=20):
     if show_all:
         shown, n_hidden = rows, 0
     else:
-        shown = [(e, r, m) for (e, r, m) in rows if not (r and r.strip())]
+        shown = [r for r in rows if not (r[1] and r[1].strip())]
         n_hidden = len(rows) - len(shown)
     print(f"\n-- {title} — {n_hits} совпадений --")
     if not shown:
         print(f"  (все {n_hidden} совпадений уже переведены — --all, чтобы показать)")
     else:
-        print(render_table(shown, headers=("EN", "RU", "Мод"), cap=cap))
+        print(render_table(shown, cap=cap))
         if n_hidden:
             print(f"  (скрыто {n_hidden} уже перевед. строк — --all, чтобы показать)")
 
@@ -537,8 +646,8 @@ def main():
         for h in hits_kind:
             rows = h.get("ru_rows") or []
             if rows:
-                for en, ru in rows:
-                    if not (ru and ru.strip()):
+                for row in rows:
+                    if not (row[1] and row[1].strip()):
                         return True
             elif h.get("snippet"):
                 return True  # нет кэша — значит есть непереведённые

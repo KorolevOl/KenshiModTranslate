@@ -16,6 +16,10 @@ rem  prints its TRANSLATION (EN -> RU) from the state cache, whichever side
 rem  (EN or RU) you searched by.
 rem  By default rows that ALREADY have a translation are HIDDEN (the point is
 rem  to find what still needs translating).  Add  --all  to show everything.
+rem  Results are printed as a table: EN | RU | Field | Mod.
+rem  "Field" = name of the field inside the .mod record (name / text0 /
+rem  building category / description...).  "name"-like fields are engine
+rem  keys - do NOT translate.  Comes from state cache or .mod parser (C#).
 rem  The cache layer (state/) is hidden by default too because it only
 rem  contains already-translated rows; --all shows it.
 rem  The "Translatable files" list (for translation launch) also omits mods
