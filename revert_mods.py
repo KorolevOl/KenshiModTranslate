@@ -165,7 +165,7 @@ def main():
 
     # --list: показать, какие моды можно откатить + orphan-секция
     if "--list" in sys.argv:
-        all_mods = TM.workshop_mods()
+        all_mods = TM.workshop_mods() + getattr(TM, "game_mods", lambda: [])()
         ready = 0
         orphans = 0
         for m in all_mods:
@@ -218,7 +218,7 @@ def main():
     TM.INCLUDE_EXCLUDED = os.environ.get("KENSHI_INCLUDE_EXCLUDED") == "1" or "--include-excluded" in sys.argv
     queries += args
 
-    all_mods = TM.workshop_mods()
+    all_mods = TM.workshop_mods() + getattr(TM, "game_mods", lambda: [])()
     mods, seen, skipped_excl = [], set(), []
     if queries:
         for q in queries:

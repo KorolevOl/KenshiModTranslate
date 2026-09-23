@@ -296,6 +296,47 @@ def workshop_mods():
                     "modfile": os.path.join(p, modfiles[0]) if modfiles else None})
     return out
 
+def game_mods():
+    """Встроенные моды ИГРЫ (2026-09-23):
+      • kenshi\\data\\*.mod  — базовая локализация (rebirth.mod, Dialogue.mod, Newwworld.mod);
+      • kenshi\\mods\\<sub>\\*.mod — вручную установленные (не Workshop).
+    id человекочитаемый (`game:rebirth`, `game:FCS_extended/x`) — resolve_mod
+    подхватывает его по подсстроке, если имя неоднозначно.
+    Искусственные файлы (наши .backup/.revert_) — игнорируются."""
+    out = []
+    seen = set()
+    def add(p, idval):
+        p = os.path.abspath(p)
+        key = os.path.normcase(p)
+        if key in seen:
+            return
+        seen.add(key)
+        base = os.path.basename(p)
+        out.append({"id": idval, "name": base[:-4],
+                    "dir": os.path.dirname(p), "modfile": p,
+                    "kind": "game"})
+    data_dir = os.path.join(GAME, "data")
+    if os.path.isdir(data_dir):
+        for f in sorted(os.listdir(data_dir)):
+            if not f.lower().endswith(".mod") or not os.path.isfile(os.path.join(data_dir, f)):
+                continue
+            if any(tag in f for tag in (".backup", ".orig_", ".revert_", ".prev", ".new", ".broken")):
+                continue
+            add(os.path.join(data_dir, f), f"game:{f[:-4]}")
+    mods_root = os.path.join(GAME, "mods")
+    if os.path.isdir(mods_root):
+        for d in sorted(os.listdir(mods_root)):
+            dp = os.path.join(mods_root, d)
+            if not os.path.isdir(dp):
+                continue
+            for f in sorted(os.listdir(dp)):
+                if not f.lower().endswith(".mod") or not os.path.isfile(os.path.join(dp, f)):
+                    continue
+                if any(tag in f for tag in (".backup", ".orig_", ".revert_", ".prev", ".new", ".broken")):
+                    continue
+                add(os.path.join(dp, f), f"game:{d}/{f[:-4]}")
+    return out
+
 def resolve_mod(query, all_mods):
     q = query.strip()
     if os.path.isfile(q) and q.lower().endswith(".mod"):
@@ -986,7 +1027,6 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None):
                     continue
                 en = e.get("original") or ""
                 if not is_translatable_text(en):
-                    # системная/непереводимая строка — не даём её в done (и не в CSV)
                     continue
                 ru, _src = prefilter.lookup(en)
                 if ru and str(ru).strip() and str(ru).strip().lower() != en.strip().lower():
@@ -995,6 +1035,17 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None):
             if reused:
                 log(f"  [no-llm] prefill из локальных источников: {reused} строк")
         filled = sum(1 for v in done.values() if v and str(v).strip())
+        # 2026-09-23 fix: --no-llm prefill должен сохраняться в кэш (mapping.json),
+        # иначе csv_mod.py export/import не сможет восстановить перевод.
+        # Применяем тот же has_real_translation, что и LLM-ветка, чтобы в кэш
+        # не попадали системные / пустые / эхо строки.
+        if filled:
+            from validate_translation import has_real_translation as _hr
+            _e_by_i = {str(e.get("i")): (e.get("original") or "").strip() for e in entries}
+            _kept = [(k, v) for k, v in done.items() if _hr(_e_by_i.get(k, ""), str(v))]
+            json.dump([{"i": int(k), "ru": v} for k, v in sorted(_kept, key=lambda kv: int(kv[0]))],
+                      open(mfile, "w", encoding="utf-8"), ensure_ascii=False)
+            log(f"  [no-llm] кэш: {len(_kept)} строк сохранено в {os.path.basename(mfile)}")
         try:
             export_mod_csv(target, entries, done)
             log(f"  [no-llm] CSV готов: {os.path.basename(target)[:-4]}.translate.csv "
@@ -1162,7 +1213,9 @@ def main():
     queries += args
 
     all_mods = workshop_mods()
-    log(f"cache workshop: {len(all_mods)} mods")
+    game = game_mods()
+    all_mods = all_mods + game
+    log(f"модов видно: workshop={len(all_mods) - len(game)} + игра(data\\, mods\\)={len(game)}")
     skipped_excl = []
     mods = []
     orphan_skipped = []
@@ -1181,14 +1234,22 @@ def main():
         else:
             mods.append(m)
     if not queries:
-        mods = [m for m in all_mods
+        # 2026-09-23: без аргументов — только workshop-моды. Встроенные файлы игры
+        # (kenshi\data\*.mod, kenshi\mods\<sub>\*.mod — Dialogue.mod/Newwworld.mod/rebirth.mod)
+        # очень большие (8k+ строк, 4MB+), поэтому включаются ТОЛЬКО явно по имени:
+        #   ./translate_mods.bat "rebirth"   ./translate_mods.bat "Dialogue" "Newwworld"
+        _ws_only = [m for m in all_mods if m.get("kind") != "game"]
+        mods = [m for m in _ws_only
                 if m.get("modfile") and not is_excluded(m["name"], m["modfile"])]
-        skipped_excl = [m for m in all_mods
+        skipped_excl = [m for m in _ws_only
                         if m.get("modfile") and is_excluded(m["name"], m["modfile"])]
-        orphan_skipped = [m for m in all_mods if not m.get("modfile")]
+        orphan_skipped = [m for m in _ws_only if not m.get("modfile")]
         if orphan_skipped:
             log(f"[orphan] {len(orphan_skipped)} папок(и) без .mod (мод удалён) — пропущено(ы)")
             log(f"         (узнать детали: revert_mods.py --list; чистка: --clean-orphans)")
+        log(f"[i] в «все моды» включены только Workshop-моды ({len(_ws_only) + len(orphan_skipped)})."
+            f"\n[ ] встроенные моды игры (kenshi\\data\\, kenshi\\mods\\): {len([m for m in all_mods if m.get('kind')=='game'])}"
+            f" — запрашивай по имени: ./translate_mods.bat \"rebirth\" \"Dialogue\" \"Newwworld\"")
     if skipped_excl:
         log(f"[exclude] {EXCL_PATH}: {len(skipped_excl)} пропущено: "
             f"{', '.join(m['name'] for m in skipped_excl[:8])}"

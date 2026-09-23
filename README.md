@@ -2,10 +2,13 @@
 
 ![kenshi-mod-translate](docs/kenshi-mod-translate.svg)
 
-Моды Steam Workshop → на русский. Локальный ИИ переводит, ты можешь править
+Моды Steam Workshop И ВСТРОЕННЫЕ МОДЫ ИГРЫ (`kenshi\data\rebirth.mod`, `Dialogue.mod`, `Newwworld.mod`, `kenshi\mods\<мод>`) → на русский. Локальный ИИ переводит, ты можешь править
 каждую фразу в `<имя-мода>.translate.csv` (Excel) и пересобирать `.mod`. Перевод пишется
-**на месте** — в папке мода в Steam, в `mods\` ничего не копируется.
+**на месте** — в папке мода в Steam / в `kenshi\data\`, в `mods\` ничего не копируется.
 Резервная копия оригинала — рядом (`.orig_<хэш>.backup`).
+править каждую фразу в `<имя-мода>.translate.csv` (Excel) и пересобирать `.mod`.
+Перевод пишется **на месте** — в папке мода в Steam / в `kenshi\data\`, в `mods\`
+ничего не копируется. Резервная копия оригинала — рядом (`.orig_<хэш>.backup`).
 
 ---
 
@@ -53,7 +56,7 @@ install.bat
 | Что хотите | Что запустить (двойной клик) |
 |---|---|
 | Перевести все моды | `./translate_mods.bat` |
-| Только один мод | `./translate_mods.bat "имя мода"` |
+| Только один мод | `./translate_mods.bat "имя мода"` — ищет по имени во ВСЕХ местах: Workshop, `kenshi\data\*.mod`, `kenshi\mods\` (пример: `"rebirth"`, `"Dialogue"`, `"Newwworld"`) |
 | Пере-перевести заново (игнорируя кеш) | `./translate_mods.bat --force "имя мода"` |
 | Только создать CSV для ручного перевода (без ИИ) | `./translate_mods.bat --no-llm "имя мода"` |
 | Посмотреть/поправить перевод | файл `<имя-мода>.translate.csv` в папке мода (Excel) → сохранить → `./assemble_mod.bat "имя мода"` |

@@ -18,7 +18,13 @@ def _tm():
         sys.exit(1)
 
 def list_all(TM):
-    return TM.workshop_mods()
+    # 2026-09-23: workshop + встроенные моды игры (kenshi\data\*.mod, kenshi\mods\*)
+    mods = list(TM.workshop_mods())
+    try:
+        mods += list(TM.game_mods())
+    except Exception:
+        pass
+    return mods
 
 def resolve(target_arg, TM):
     all_mods = list_all(TM)
@@ -172,7 +178,7 @@ def main(argv):
     ap.add_argument("--list", action="store_true", help="показать все моды (id + имя) и выйти")
     a = ap.parse_args(argv)
     if a.cmd == "list" or (a.cmd in ("export","import") and not a.mods and a.list):
-        for m in TM.workshop_mods():
+        for m in list_all(TM):
             print(f"{m.get('id','')}\t{m.get('name','')}\t{os.path.basename(m.get('modfile') or '')}")
         return 0
     if not a.mods and not a.list:

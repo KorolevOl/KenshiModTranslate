@@ -394,7 +394,7 @@ def run_fix(bad_list, state, name_map):
     import translate_mods as TM   # battle-tested: extract/resume/retry/audit/apply
     from progress import Progress
 
-    all_mods = TM.workshop_mods()
+    all_mods = TM.workshop_mods() + getattr(TM, "game_mods", lambda: [])()
     ctx = {"nmods_done": 0, "total_mods": len(bad_list), "t_llm": 0.0}
     results = []
     with Progress(len(bad_list)) as PR:
