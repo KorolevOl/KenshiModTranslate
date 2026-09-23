@@ -40,3 +40,8 @@ Desktop.ini
 
 # автоскачанный .NET runtime (install.py -- dotnet-local в папке проекта, без админа)
 dotnet-local/
+
+# Dev-time / migration artifacts (local only)
+_dev/
+_mods_inventory.json
+_mods_inventory_pre_migration.json
