@@ -280,7 +280,11 @@ def apply_dict(en_original, ru_translated):
     if low in DICT["exact"]:
         return DICT["exact"][low]
     out = ru_translated
-    for en in DICT["words"]:
+    # Детерминированный порядок: ДЛИННЕЕ фразы первыми (longest-match wins),
+    # иначе 'skeleton' подставится раньше 'skeleton p4mkii' и оставит мусор.
+    # (Старый dict-формат случайно давал тот же эффект за файлом; set — случайный
+    # порядок обхода, поэтому порядок явно фиксируем.)
+    for en in sorted(DICT["words"], key=lambda k: (len(k), k), reverse=True):
         if not en:
             continue
         ru = DICT["exact"].get(en)
