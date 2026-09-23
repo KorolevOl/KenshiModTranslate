@@ -1176,6 +1176,19 @@ def main():
     if "--include-excluded" in sys.argv:
         sys.argv.remove("--include-excluded")
         INCLUDE_EXCLUDED = True
+    # 2026-09-23: --temperature <0..2> — переопределить temperature из config.json
+    # на этот запуск (например, --temperature 0.3 для более «сухого» перевода).
+    if "--temperature" in sys.argv:
+        i = sys.argv.index("--temperature")
+        if i + 1 >= len(sys.argv) or not sys.argv[i + 1]:
+            print("--temperature needs a value, e.g. --temperature 0.3")
+            return 2
+        try:
+            globals()["TEMPERATURE"] = max(0.0, min(2.0, float(sys.argv[i + 1])))
+        except ValueError:
+            print(f"--temperature: «{sys.argv[i+1]}» не похоже на число (нужно, напр., 0.3)")
+            sys.exit(2)
+        del sys.argv[i:i + 2]
     # 2026-09-23: --steam / --mods — явные выборки подкаталогов.
     #   --steam : ТОЛЬКО Steam Workshop (workshop\content\233860\<id>)
     #   --mods  : ТОЛЬКО kenshi\mods\<mod>\*.mod (ручные, НЕ Workshop)
@@ -1250,21 +1263,48 @@ def main():
         else:
             mods.append(m)
     if not queries:
-        # 2026-09-23: «все моды» — по SCOPE (требование пользователя):
-        #   ./translate_mods.bat          → ТОЛЬКО Steam Workshop (default)
-        #   ./translate_mods.bat --steam  → ТОЛЬКО Steam Workshop (явный)
-        #   ./translate_mods.bat --mods   → ТОЛЬКО kenshi\mods\<mod>\*.mod
-        #   ./translate_mods.bat --all    → Steam Workshop + kenshi\mods\<mod>\*.mod
+        # 2026-09-23: «все моды» — по SCOPE. Без флагов и имён — МЕНЮ (номера):
+        #   1) --all   : Steam Workshop + kenshi\mods\<mod>
+        #   2) --steam : только Steam Workshop
+        #   3) --mods  : только kenshi\mods\<mod>\*.mod
+        # Флаги --all/--steam/--mods задают SCOPE прямо (меню не появляется).
         # ВСТРОЕННЫЕ (kenshi\data\*.mod: rebirth/Dialogue/Newwworld) НИКОГДА
         # не в «все» — только по явном имени:
         #   ./translate_mods.bat "rebirth"  "Dialogue"  "Newwworld"
+        if SCOPE is None:
+            n_ws   = len([m for m in all_mods if m.get("kind") != "game" and m.get("modfile")])
+            n_mods = len([m for m in all_mods if m.get("kind") == "game" and m.get("gk") == "mods" and m.get("modfile")])
+            print("=" * 62)
+            print("Перевести что именно? (введите номер)")
+            print(f"  1) ВСЁ: Steam Workshop ({n_ws}) + папка kenshi\\mods ({n_mods})   [--all]")
+            print(f"  2) Только Steam Workshop ({n_ws})                     [--steam]")
+            print(f"  3) Только папка kenshi\\mods ({n_mods})                 [--mods]")
+            print("  0) Выход")
+            print("  (встроенные kenshi\\data: rebirth/Dialogue/Newwworld — только по имени)")
+            print("=" * 62)
+            while True:
+                try:
+                    ch = input("Ваш выбор [1/2/3 (0-выход)]: ").strip()
+                except EOFError:
+                    ch = "0"
+                if ch in ("1", "all"):
+                    SCOPE = "all"; break
+                if ch in ("2", "steam"):
+                    SCOPE = "steam"; break
+                if ch in ("3", "mods"):
+                    SCOPE = "mods"; break
+                if ch in ("0", "q", "quit", "выход"):
+                    log("прерываю (ничего не выбрано)")
+                    return 1
+                print("  не понял. Введите 1, 2 или 3 (0 — выход).")
+            log(f"[i] выбрано меню: scope={SCOPE}")
         ws    = [m for m in all_mods if m.get("kind") != "game"]
         gmods = [m for m in all_mods if m.get("kind") == "game" and m.get("gk") == "mods"]
         if SCOPE == "mods":
             pool      = gmods;  scope_lbl = "папка kenshi\\mods"
         elif SCOPE == "all":
             pool      = ws + gmods; scope_lbl = "Steam Workshop + папка kenshi\\mods"
-        else:  # None (default) или "steam" — одинаково: Steam Workshop
+        else:  # "steam"
             pool      = ws;     scope_lbl = "Steam Workshop"
         mods = [m for m in pool
                 if m.get("modfile") and not is_excluded(m["name"], m["modfile"])]

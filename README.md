@@ -55,9 +55,8 @@ install.bat
 
 | Что хотите | Что запустить (двойной клик) |
 |---|---|
-| Перевести все моды Steam Workshop | `./translate_mods.bat` (или явно: `./translate_mods.bat --steam`) |
-| Перевести все моды из `kenshi\mods\` | `./translate_mods.bat --mods` |
-| Перевести всё (Steam Workshop + `kenshi\mods\`) | `./translate_mods.bat --all` |
+| Перевести «все» (меню: 1) всё, 2) steam, 3) mods | `./translate_mods.bat` (явно: `--all` / `--steam` / `--mods`) |
+| Перевести всё сразу: Steam Workshop + `kenshi\mods\` | `./translate_mods.bat --all` |
 | Только один мод | `./translate_mods.bat "имя мода"` — ищет по имени во ВСЕХ местах: Workshop, `kenshi\data\*.mod`, `kenshi\mods\` (пример: `"rebirth"`, `"Dialogue"`, `"Newwworld"`) |
 | Пере-перевести заново (игнорируя кеш) | `./translate_mods.bat --force "имя мода"` |
 | Только создать CSV для ручного перевода (без ИИ) | `./translate_mods.bat --no-llm "имя мода"` |
@@ -465,6 +464,7 @@ prefilter (reuse без LLM) и словарь работают как есть.
 | `--force` | **Пере-перевести всё заново** (игнорирует кэш, резервную копию не трогает) |
 | `--no-llm` | **Не ходить в LLM** — только извлечь строки и создать `<имя>.translate.csv` (пустая колонка RU для ручного перевода). Затем правь Excel → `./assemble_mod.bat "имя"` |
 | `--include-excluded` | Переводить даже моды из `exclude.txt` |
+| `--temperature <число>` | Переопределить `temperature` из `config.json` на этот запуск (0–2). Пример: `./translate_mods.bat --temperature 0.3 --force "имя"` — более «сухой», предсказуемый перевод |
 | `--list-file файл.txt` | Список модов (одна строка = имя-или-ID) |
 | `--file <путь> --label <имя>` | Перевести **произвольный `.mod`-файл** прямо по пути (не только из Workshop: `kenshi\data\*.mod`, `kenshi\mods\<мод>\*.mod`, и т.п.; `--label` — как назвать результат в кеше) |
 
