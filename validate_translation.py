@@ -457,26 +457,24 @@ def validate_batch(strings, rows):
 
 def is_translatable_text(en):
     """«ЕСТЬ ЛИ СМЫСЛ ПЕРЕВОДЧИКУ ТРАТИТЬ ВРЕМЯ ЭТУ СТОРОКУ» — единств. источник
-    для решения «строкa входит в CSV как пустая строка на заполнение».
+    для решения «строка входит в CSV как пустая строка на заполнение».
 
     Возвращает False (не переводится, НЕ давать для ручной работы):
       • identifier (имя ассета, entry-ID, @-флаг AI) — системный ключ;
-      • onomatopoeia (крики/скрипы) — звук, LLM правомерно не даёт RU;
       • already_russian — уже русский текст (перевод не нужен);
       • passthrough (чистые знаки/числа/кириллица) — нечего переводить.
 
-    Возвращает True: настоящий EN/смешанный текст (1 или более слова),
-    включая одиночные UI-слова «INTERIOR», «FARMING» — такие строки
-    переводы имеют, и их НЕ выкидываем из CSV.
+    2026-09-24: onomatopoeia (крики/звуки) — ТЕПЕРЬ ПЕРЕВОДИМЫЕ (True).
+    В Kenshi у персонажей и NPC нет голосовых звуков — «крики» это ТЕСТ
+    в облачке, локализующийся как любой другой текст. RU из LLM теперь
+    проходит в кэш, CSV и apply (has_real_translation=True, не False).
 
-    2026-09-22 (по просьбе пользователя): эта функция — единств. источник
-    решений «что НЕ давать пользователю/кэше как системное». Используется
-    export_mod_csv (пустые строки для ручного заполнения), csv_mod.export_csv,
-    --no-llm prefill, AND (через finished_row) финальным save кэша.
+    Возвращает True: настоящий EN/смешанный (1 или более слова), включая
+    одиночные UI-слова «INTERIOR», «FARMING» — такие строки переводы имеют.
     """
     if not isinstance(en, str) or not en.strip():
         return False
-    if is_identifier(en) or is_onomatopoeia(en) or already_russian(en):
+    if is_identifier(en) or already_russian(en):
         return False
     try:
         from prefilter import nothing_to_translate
