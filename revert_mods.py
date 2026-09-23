@@ -69,6 +69,60 @@ def _md5(path):
         return None
 
 
+def _hash_from_backup(bak):
+    """Якорь кеша h из имени бэкапа <имя>.mod.orig_<h>.backup (между .orig_ и .backup).
+
+    Тот же h, что translate_mods.py кладёт в state\\{h}_entries.json / {h}_mapping.json.
+    Возвращает None, если имя не похоже на наш бэкап.
+    """
+    name = os.path.basename(bak)
+    i = name.find(".orig_")
+    j = name.rfind(".backup")
+    if i < 0 or j <= i + 6:
+        return None
+    return name[i + 6:j]
+
+
+def clean_caches_for(target, bak, dry_run=False):
+    """--clean: удалить кэш и CSV ОДНОГО мода (безопасно).
+
+    Удаляется (если существует):
+      • state\\{h}_entries.json, state\\{h}_mapping.json  (h — из имени бэкапа);
+      • <папка>/<имя>.translate.csv                      (per-mod CSV, рядом с .mod).
+    НЕ трогается (гарантированно):
+      • <имя>.mod.orig_<h>.backup (EN-бэкап — нужен для отката);
+      • *.revert_<ts> (RU-копии), legacy общий translate.csv (может делиться модами),
+        другие моды, конфиг/код/DLL.
+    Возвращает список путей, которые удалены (в dry-run — которые бы были удалены).
+    """
+    removed = []
+    h = _hash_from_backup(bak)
+    if h:
+        for suf in ("_entries.json", "_mapping.json"):
+            p = os.path.join(STATE, h + suf)
+            if os.path.isfile(p):
+                if not dry_run:
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+                removed.append(p)
+    # per-mod CSV (только <имя>.translate.csv; общий translate.csv НЕ трогаем)
+    d = os.path.dirname(target)
+    b = os.path.basename(target)
+    if b.lower().endswith(".mod"):
+        b = b[:-4]
+    csv_p = os.path.join(d, b + ".translate.csv")
+    if os.path.isfile(csv_p):
+        if not dry_run:
+            try:
+                os.remove(csv_p)
+            except OSError:
+                pass
+        removed.append(csv_p)
+    return removed
+
+
 def revert_one(target, dry_run=False):
     """Один файл .mod. (status, detail): status in ok/skip/error."""
     bak = find_backup(target)
@@ -132,7 +186,8 @@ def clean_orphans(mods, dry_run=False):
 def main():
     args = [a for a in sys.argv[1:] if a]
     dry_run = "--dry-run" in args
-    args = [a for a in args if a not in ("--dry-run", "--list")]
+    clean = "--clean" in args
+    args = [a for a in args if a not in ("--dry-run", "--list", "--clean")]
 
     # --clean-orphans: перенести orphan-папки (без .mod) в trash (обратимо)
     if "--clean-orphans" in sys.argv:
@@ -202,8 +257,21 @@ def main():
             return 3
         if dry_run:
             print("Откат (dry-run): " + path)
+            if clean:
+                print("  + очистка кэша и CSV (dry-run: покажу, что бы было удалено)")
         status, detail = revert_one(path, dry_run=dry_run)
         print(f"  [{status}] {os.path.basename(path)} — {detail}")
+        if clean and status in ("ok", "skip"):
+            bak = find_backup(path)
+            if bak:
+                cleaned = clean_caches_for(path, bak, dry_run=dry_run)
+                verb = "бы удалено" if dry_run else "удалено (кэш+CSV)"
+                for p in cleaned:
+                    print(f"    {verb}: {p}")
+                if not cleaned:
+                    print("    (кэш и CSV этого мода уже отсутствовали)")
+            else:
+                print("    [!] --clean: нет бэкапа — не могу определить якорь кеша (CSV удалён, если был)")
         return {"ok": 0, "skip": 0, "error": 1}[status]
 
     queries = []
@@ -268,10 +336,12 @@ def main():
         print("revert: нечего откатывать (моды не найдены или все в исключениях)")
         return 3
 
-    print(f"Откат: {len(mods)} мод(ов)" + ("  [DRY-RUN — ничего не меняется]" if dry_run else ""))
+    print(f"Откат: {len(mods)} мод(ов)" + (" (+ очистка кэша и CSV: --clean)" if clean else "")
+          + ("  [DRY-RUN — ничего не меняется]" if dry_run else ""))
     print(f"workshop: {WORKSHOP}")
     print()
     ok = fail = skip = 0
+    n_cleaned_total = 0
     for i, m in enumerate(mods, 1):
         tgt = m["modfile"]
         if not tgt:
@@ -279,14 +349,25 @@ def main():
             continue
         status, detail = revert_one(tgt, dry_run=dry_run)
         tag = {"ok": "OK  ", "skip": "SKIP", "error": "ERR "}[status]
-        print(f"  [{i}/{len(mods)}] {tag} #{m['id']} {os.path.basename(tgt):42} — {detail}")
+        line = f"  [{i}/{len(mods)}] {tag} #{m['id']} {os.path.basename(tgt):42} — {detail}"
+        if clean and status in ("ok", "skip"):
+            bak = find_backup(tgt)
+            if bak:
+                cleaned = clean_caches_for(tgt, bak, dry_run=dry_run)
+                n_cleaned_total += len(cleaned)
+                if cleaned:
+                    line += f"  | clean: {len(cleaned)} файл(а) " + ("было бы удалено" if dry_run else "удалено")
+                    for p in cleaned:
+                        print(f"         → {p}")
+        print(line)
         if status == "ok":
             ok += 1
         elif status == "skip":
             skip += 1
         else:
             fail += 1
-    print(f"\nИтого: откатано {ok}, пропущено {skip}, ошибок {fail}")
+    print(f"\nИтого: откатано {ok}, пропущено {skip}, ошибок {fail}"
+          + (f", кэш+CSV: {n_cleaned_total} файлов " + ("было бы удалено" if dry_run else "удалено") if clean else ""))
     if fail:
         return 1
     return 0

@@ -73,6 +73,7 @@ install.bat
 | Убрать мод из кеша | `./verify_translations.bat --purge "имя мода"` |
 | Найти, где во всех модах И В ФАЙЛАХ ИГРЫ лежит фраза (реализация поиска по `kenshi\data\*.mod`, `kenshi\mods\<мод>`, `.po`), затем выбрать номера и запустить перевод | `./search_mods.bat "фраза"` → вводишь номера → перевод запускается |
 | Откатить перевод: вернуть оригинал EN из бэкапа | `./revert_mods.bat "имя мода"` |
+| Откатить + вычистить кэш и CSV мода | `./revert_mods.bat --clean "имя мода"` |
 | Откатить все моды (спросит y/N) | `./revert_mods.bat` |
 | По списку модов из файла | `./revert_mods.bat --list-file my_mods.txt` |
 | Показать, что можно откатить (+ осиротевшие) | `./revert_mods.bat --list` |
@@ -181,6 +182,7 @@ move -Force "Pocket Change 2.0.mod.prev" "Pocket Change 2.0.mod"
 py .\csv_mod.py --list
 # откат (вернуть EN оригинал из бэкапа)
 ./revert_mods.bat "имя" | --dry-run | --list-file f.txt | --list | (все, y/N)
+./revert_mods.bat --clean "имя"      # откат + вычистить кэш state/<id> + CSV мода
 ./revert_mods.bat --file "<путь>\к .mod"   # kenshi\data\*.mod, kenshi\mods\...
 ./revert_mods.bat --clean-orphans [--dry-run]
 # перевести произвольный .mod-файл прямо по пути (не только из Workshop)
