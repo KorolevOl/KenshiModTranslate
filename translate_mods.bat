@@ -3,11 +3,16 @@ setlocal
 rem ============================================================
 rem  Kenshi RU-mod-translation launcher (foreground, resumable)
 rem  usage:
-rem    translate_mods.bat                        - ask: translate ALL workshop mods?
+rem    translate_mods.bat                         - ALL mods Steam Workshop
+rem    translate_mods.bat --steam                 - same as above (explicit)
+rem    translate_mods.bat --mods                  - ALL mods kenshi\mods\<mod>
 rem    translate_mods.bat "Pocket Change" 1140742609
+rem    translate_mods.bat "rebirth"               - built-in (kenshi\data)
 rem    translate_mods.bat --list-file mods.txt
-rem    translate_mods.bat --force "Pocket Change"   - re-translate EVEN IF cached
-rem    translate_mods.bat --include-excluded "X"   - translate mod from exclude list
+rem    translate_mods.bat --force "Pocket Change" - retranslate even if cached
+rem    translate_mods.bat --include-excluded "X"  - include listed mod
+rem  NOTE: built-in game mods (kenshi\data: rebirth, Dialogue, Newwworld)
+rem  are NEVER part of "translate ALL" - request them by name.
 rem  --force can also be set in config.json: "force_retranslate": true
 rem  Ctrl+C stops it safely; run again to resume (progress saves)
 rem ============================================================

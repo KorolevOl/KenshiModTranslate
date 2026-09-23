@@ -305,7 +305,7 @@ def game_mods():
     Искусственные файлы (наши .backup/.revert_) — игнорируются."""
     out = []
     seen = set()
-    def add(p, idval):
+    def add(p, idval, gk):
         p = os.path.abspath(p)
         key = os.path.normcase(p)
         if key in seen:
@@ -314,7 +314,7 @@ def game_mods():
         base = os.path.basename(p)
         out.append({"id": idval, "name": base[:-4],
                     "dir": os.path.dirname(p), "modfile": p,
-                    "kind": "game"})
+                    "kind": "game", "gk": gk})
     data_dir = os.path.join(GAME, "data")
     if os.path.isdir(data_dir):
         for f in sorted(os.listdir(data_dir)):
@@ -322,7 +322,7 @@ def game_mods():
                 continue
             if any(tag in f for tag in (".backup", ".orig_", ".revert_", ".prev", ".new", ".broken")):
                 continue
-            add(os.path.join(data_dir, f), f"game:{f[:-4]}")
+            add(os.path.join(data_dir, f), f"game:{f[:-4]}", "data")
     mods_root = os.path.join(GAME, "mods")
     if os.path.isdir(mods_root):
         for d in sorted(os.listdir(mods_root)):
@@ -334,7 +334,7 @@ def game_mods():
                     continue
                 if any(tag in f for tag in (".backup", ".orig_", ".revert_", ".prev", ".new", ".broken")):
                     continue
-                add(os.path.join(dp, f), f"game:{d}/{f[:-4]}")
+                add(os.path.join(dp, f), f"game:{d}/{f[:-4]}", "mods")
     return out
 
 def resolve_mod(query, all_mods):
@@ -1176,6 +1176,19 @@ def main():
     if "--include-excluded" in sys.argv:
         sys.argv.remove("--include-excluded")
         INCLUDE_EXCLUDED = True
+    # 2026-09-23: --steam / --mods — явные выборки подкаталогов.
+    #   --steam : ТОЛЬКО Steam Workshop (workshop\content\233860\<id>)
+    #   --mods  : ТОЛЬКО kenshi\mods\<mod>\*.mod (ручные, НЕ Workshop)
+    # Без флага (default) — Workshop + kenshi\mods\.
+    # ВСТРОЕННЫЕ моды игры (kenshi\data\*.mod: rebirth/Dialogue/Newwworld)
+    # в «ВСЕ» НИКОГДА не входят — ТОЛЬКО по явном имени.
+    SCOPE = None  # None = default (workshop+mods), "steam", "mods"
+    if "--steam" in sys.argv:
+        sys.argv.remove("--steam")
+        SCOPE = "steam"
+    if "--mods" in sys.argv:
+        sys.argv.remove("--mods")
+        SCOPE = "mods"
     args = [a for a in sys.argv[1:] if a]
     # 2026-09-21: --file <path> --label <label> — перевести произвольный .mod
     # напрямую (workshop mod, kenshi\data\*.mod, kenshi\mods\<mod>\*.mod — любой путь).
@@ -1234,22 +1247,35 @@ def main():
         else:
             mods.append(m)
     if not queries:
-        # 2026-09-23: без аргументов — только workshop-моды. Встроенные файлы игры
-        # (kenshi\data\*.mod, kenshi\mods\<sub>\*.mod — Dialogue.mod/Newwworld.mod/rebirth.mod)
-        # очень большие (8k+ строк, 4MB+), поэтому включаются ТОЛЬКО явно по имени:
-        #   ./translate_mods.bat "rebirth"   ./translate_mods.bat "Dialogue" "Newwworld"
-        _ws_only = [m for m in all_mods if m.get("kind") != "game"]
-        mods = [m for m in _ws_only
+        # 2026-09-23: «все моды» — по SCOPE (требование пользователя):
+        #   ./translate_mods.bat          → ТОЛЬКО Steam Workshop (default)
+        #   ./translate_mods.bat --steam  → ТОЛЬКО Steam Workshop (явный)
+        #   ./translate_mods.bat --mods   → ТОЛЬКО kenshi\mods\<mod>\*.mod
+        # ВСТРОЕННЫЕ (kenshi\data\*.mod: rebirth/Dialogue/Newwworld) НИКОГДА
+        # не в «все» — только по явном имени:
+        #   ./translate_mods.bat "rebirth"  "Dialogue"  "Newwworld"
+        ws    = [m for m in all_mods if m.get("kind") != "game"]
+        gmods = [m for m in all_mods if m.get("kind") == "game" and m.get("gk") == "mods"]
+        if SCOPE == "mods":
+            pool      = gmods;  scope_lbl = "папка kenshi\\mods"
+        else:  # None (default) или "steam" — одинаково: Steam Workshop
+            pool      = ws;     scope_lbl = "Steam Workshop"
+        mods = [m for m in pool
                 if m.get("modfile") and not is_excluded(m["name"], m["modfile"])]
-        skipped_excl = [m for m in _ws_only
+        skipped_excl = [m for m in pool
                         if m.get("modfile") and is_excluded(m["name"], m["modfile"])]
-        orphan_skipped = [m for m in _ws_only if not m.get("modfile")]
+        orphan_skipped = [m for m in pool if not m.get("modfile")]
         if orphan_skipped:
             log(f"[orphan] {len(orphan_skipped)} папок(и) без .mod (мод удалён) — пропущено(ы)")
             log(f"         (узнать детали: revert_mods.py --list; чистка: --clean-orphans)")
-        log(f"[i] в «все моды» включены только Workshop-моды ({len(_ws_only) + len(orphan_skipped)})."
-            f"\n[ ] встроенные моды игры (kenshi\\data\\, kenshi\\mods\\): {len([m for m in all_mods if m.get('kind')=='game'])}"
-            f" — запрашивай по имени: ./translate_mods.bat \"rebirth\" \"Dialogue\" \"Newwworld\"")
+        n_game = len([m for m in all_mods if m.get("kind") == "game" and m.get("gk") == "mods"])
+        if SCOPE == "mods" and not pool:
+            log(f"[!] папка kenshi\\mods\\ пуста или нет мода с .mod — нечего переводить")
+        log(f"[i] «все моды» = {scope_lbl}: всего {len(pool) + len(orphan_skipped)}, пройдёт {len(mods)}.")
+        if SCOPE != "mods":
+            log(f"    (папка kenshi\\mods: {n_game} шт. — отдельно: ./translate_mods.bat --mods)")
+        log(f"[ ] ВСТРОЕННЫЕ (kenshi\\data\\: rebirth/Dialogue/Newwworld) НИКОГДА не в «все» — "
+            f"только по имени: ./translate_mods.bat \"rebirth\"")
     if skipped_excl:
         log(f"[exclude] {EXCL_PATH}: {len(skipped_excl)} пропущено: "
             f"{', '.join(m['name'] for m in skipped_excl[:8])}"
@@ -1261,9 +1287,9 @@ def main():
         log(f"выбрано: {len(mods)} мод(ов)")
     else:
         if not mods:
-            log("все workshop-моды в исключениях — нечего делать")
+            log(f"все моды в выбранной группе ({scope_lbl}) в исключениях — нечего делать")
             return 1
-        log(f"[?] список мода не указан. {len(mods)} eligible Workshop-мод(ов) ({len(skipped_excl)} в исключениях).")
+        log(f"[?] список мода не указан. {len(mods)} eligible ({scope_lbl}); {len(skipped_excl)} в исключениях.")
         log("    перевести ВСЕ? Одна LLM-полоса, 200+ модов - долго.")
         ans = input("    Перевести все [y/N]: ").strip().lower()
         if ans not in ("y", "yes", "д", "да"):
