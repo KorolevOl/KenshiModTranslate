@@ -1179,16 +1179,19 @@ def main():
     # 2026-09-23: --steam / --mods — явные выборки подкаталогов.
     #   --steam : ТОЛЬКО Steam Workshop (workshop\content\233860\<id>)
     #   --mods  : ТОЛЬКО kenshi\mods\<mod>\*.mod (ручные, НЕ Workshop)
-    # Без флага (default) — Workshop + kenshi\mods\.
+    # Без флага (default) — Steam Workshop.
     # ВСТРОЕННЫЕ моды игры (kenshi\data\*.mod: rebirth/Dialogue/Newwworld)
     # в «ВСЕ» НИКОГДА не входят — ТОЛЬКО по явном имени.
-    SCOPE = None  # None = default (workshop+mods), "steam", "mods"
+    SCOPE = None  # None = Steam (default), "steam", "mods", "all"
     if "--steam" in sys.argv:
         sys.argv.remove("--steam")
         SCOPE = "steam"
     if "--mods" in sys.argv:
         sys.argv.remove("--mods")
         SCOPE = "mods"
+    if "--all" in sys.argv:
+        sys.argv.remove("--all")
+        SCOPE = "all"
     args = [a for a in sys.argv[1:] if a]
     # 2026-09-21: --file <path> --label <label> — перевести произвольный .mod
     # напрямую (workshop mod, kenshi\data\*.mod, kenshi\mods\<mod>\*.mod — любой путь).
@@ -1251,6 +1254,7 @@ def main():
         #   ./translate_mods.bat          → ТОЛЬКО Steam Workshop (default)
         #   ./translate_mods.bat --steam  → ТОЛЬКО Steam Workshop (явный)
         #   ./translate_mods.bat --mods   → ТОЛЬКО kenshi\mods\<mod>\*.mod
+        #   ./translate_mods.bat --all    → Steam Workshop + kenshi\mods\<mod>\*.mod
         # ВСТРОЕННЫЕ (kenshi\data\*.mod: rebirth/Dialogue/Newwworld) НИКОГДА
         # не в «все» — только по явном имени:
         #   ./translate_mods.bat "rebirth"  "Dialogue"  "Newwworld"
@@ -1258,6 +1262,8 @@ def main():
         gmods = [m for m in all_mods if m.get("kind") == "game" and m.get("gk") == "mods"]
         if SCOPE == "mods":
             pool      = gmods;  scope_lbl = "папка kenshi\\mods"
+        elif SCOPE == "all":
+            pool      = ws + gmods; scope_lbl = "Steam Workshop + папка kenshi\\mods"
         else:  # None (default) или "steam" — одинаково: Steam Workshop
             pool      = ws;     scope_lbl = "Steam Workshop"
         mods = [m for m in pool
@@ -1268,12 +1274,12 @@ def main():
         if orphan_skipped:
             log(f"[orphan] {len(orphan_skipped)} папок(и) без .mod (мод удалён) — пропущено(ы)")
             log(f"         (узнать детали: revert_mods.py --list; чистка: --clean-orphans)")
-        n_game = len([m for m in all_mods if m.get("kind") == "game" and m.get("gk") == "mods"])
+        n_mods = len([m for m in all_mods if m.get("kind") == "game" and m.get("gk") == "mods"])
         if SCOPE == "mods" and not pool:
             log(f"[!] папка kenshi\\mods\\ пуста или нет мода с .mod — нечего переводить")
         log(f"[i] «все моды» = {scope_lbl}: всего {len(pool) + len(orphan_skipped)}, пройдёт {len(mods)}.")
-        if SCOPE != "mods":
-            log(f"    (папка kenshi\\mods: {n_game} шт. — отдельно: ./translate_mods.bat --mods)")
+        if SCOPE in (None, "steam"):
+            log(f"    (папка kenshi\\mods: {n_mods} шт. — отдельно: --mods; вместе: --all)")
         log(f"[ ] ВСТРОЕННЫЕ (kenshi\\data\\: rebirth/Dialogue/Newwworld) НИКОГДА не в «все» — "
             f"только по имени: ./translate_mods.bat \"rebirth\"")
     if skipped_excl:

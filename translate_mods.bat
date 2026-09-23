@@ -6,6 +6,7 @@ rem  usage:
 rem    translate_mods.bat                         - ALL mods Steam Workshop
 rem    translate_mods.bat --steam                 - same as above (explicit)
 rem    translate_mods.bat --mods                  - ALL mods kenshi\mods\<mod>
+rem    translate_mods.bat --all                   - Steam Workshop + kenshi\mods\<mod>
 rem    translate_mods.bat "Pocket Change" 1140742609
 rem    translate_mods.bat "rebirth"               - built-in (kenshi\data)
 rem    translate_mods.bat --list-file mods.txt

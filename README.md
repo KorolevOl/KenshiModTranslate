@@ -57,6 +57,7 @@ install.bat
 |---|---|
 | Перевести все моды Steam Workshop | `./translate_mods.bat` (или явно: `./translate_mods.bat --steam`) |
 | Перевести все моды из `kenshi\mods\` | `./translate_mods.bat --mods` |
+| Перевести всё (Steam Workshop + `kenshi\mods\`) | `./translate_mods.bat --all` |
 | Только один мод | `./translate_mods.bat "имя мода"` — ищет по имени во ВСЕХ местах: Workshop, `kenshi\data\*.mod`, `kenshi\mods\` (пример: `"rebirth"`, `"Dialogue"`, `"Newwworld"`) |
 | Пере-перевести заново (игнорируя кеш) | `./translate_mods.bat --force "имя мода"` |
 | Только создать CSV для ручного перевода (без ИИ) | `./translate_mods.bat --no-llm "имя мода"` |
@@ -443,6 +444,7 @@ prefilter (reuse без LLM) и словарь работают как есть.
 ./translate_mods.bat                        # ВСЕ моды Steam Workshop (спросит [y/N])
 ./translate_mods.bat --steam                # то же самое, явно
 ./translate_mods.bat --mods                 # ВСЕ моды из kenshi\mods\<мод>\
+./translate_mods.bat --all                  # Steam Workshop + kenshi\mods\<мод>\
 ./translate_mods.bat "Pocket Change 2.0"    # один мод по имени
 ./translate_mods.bat 1173662576             # один мод по **Steam-ID** (уникальный номер мода в Workshop,
                                                                  # виден в ссылке steamcommunity.com/shared/filedetails/...)
@@ -459,6 +461,7 @@ prefilter (reuse без LLM) и словарь работают как есть.
 |---|---|
 | `--steam` | **«Все моды» = только Steam Workshop** (то же, что и без аргумента — для явно-сти) |
 | `--mods` | **«Все моды» = только `kenshi\mods\<мод>\*.mod`** (ручные, не Workshop) |
+| `--all` | **«Все моды» = Steam Workshop + `kenshi\mods\<мод>\*.mod`** (всё, что можно автоматом) |
 | `--force` | **Пере-перевести всё заново** (игнорирует кэш, резервную копию не трогает) |
 | `--no-llm` | **Не ходить в LLM** — только извлечь строки и создать `<имя>.translate.csv` (пустая колонка RU для ручного перевода). Затем правь Excel → `./assemble_mod.bat "имя"` |
 | `--include-excluded` | Переводить даже моды из `exclude.txt` |
