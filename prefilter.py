@@ -249,3 +249,14 @@ def lookup(en):
 
 def pool_size():
     return 0 if _default_pool is None else len(_default_pool)
+
+
+def game_po_map():
+    """{en_lower: ru} for pool entries sourced from the GAME's own .po layer
+    (source == 'game.po'). Used by translate_mods to keep such rows OUT of the
+    cache (mapping.json) and the CSV: the game already renders them in the
+    target language on its own — no translation work to track. dict.json and
+    other-mods rows are NOT included (those stay as before)."""
+    if _default_pool is None:
+        return {}
+    return {k: ru for k, (ru, src) in _default_pool._map.items() if src == "game.po"}

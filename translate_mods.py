@@ -171,6 +171,20 @@ _PRE_PO_PATHS = [
 if PRE_FILTER_ENABLED:
     prefilter.configure(DICT_PATH, _PRE_PO_PATHS, STATE)
 
+# ---- GAME-PO SKIP (2026-09-24) -------------------------------------------------
+# Строки, у которых уже есть RU в .по САМОЙ ИГРЫ (локаль target_lang) — игра
+# сама их рендерит по-русски в .mod. Поэтому НЕ пишем такие строки ни в кэш
+# (state/_mapping.json), ни в <имя-мода>.translate.csv (нет работы по
+# переводу — нечего отслеживать). ИСКЛЮЧЕНИЕ: строки из dict.json (канон проекта,
+# напр. CRAFTING->РЕМЕСЛО — наша норма) остаются как есть; здесь только
+# .po-слой игры. Флаг заполняется по i-индексу в reuse-ветке translate_entries
+# и в prefill-ветке --no-llm.
+GAME_SKIP = set()
+
+
+def _in_game_skip(i):
+    return str(i) in GAME_SKIP
+
 
 # ---------- exclusion patterns ----------
 EXCL_PATH = T.get("exclude_file", "exclude.txt")
@@ -708,17 +722,43 @@ def translate_entries(entries, done_map, name, ctx, todo_scope=None):
 
     Стратегия (2026-09-19, по просьбе пользователя):
     • динамический размер чанка: пакет строится до токен-бюджета CONTEXT_WIN
-      (короткие строки → больше строк в чанке, упирается в MAX_BATCH_LN потолок
-      — твоя цифра «до 500»; длинные → токены ужимают число строк);
+      (короткие строки → больше строк в чанк, упор в потолок MAX_BATCH_LN);
     • прогрессбар меряется в ТОКЕНАХ (вход=символы строки / CHARS_PER_TOK),
-      а не в строках — т.к. батчи динамические; бар advances только за
-      УСПЕШНО переведённые (упавшие чанки не «списываются» вперёд);
+      не в строках — батчи динамические; бар advances только за УСПЕШНО
+      переведённые (упавшие чанки не «списываются» вперёд);
     • упавший чанк (empty / len mismatch / отбраковка audit) НЕ ретраится
       по-кусочному в цикле — его строки откладываются в failed и ПОСЛЕ
-      основного прохода мода уходят LLM отдельным проходом (ДОПЕРИОД)
+      основного прохода мода уйдут LLM отдельным проходом (ДОПЕРИОД)
       со своим прогрессбаром FIX (в токенах) в том же слоте, что и NOW-бар;
     • если строки всё равно не сданы — пустыми; подхватят verify --fix / resume.
+
+    GAME-PO (2026-09-24): строки, чей RU уже есть в .po ИГРЫ (локаль
+    target_lang) — игра рендерит их сама. Pre-pass ниже заполняет их RU из
+    пула и помечает в GAME_SKIP — это работает во ВСЕХ путях (обычный и
+    verify --fix), поэтому фиксер не отправляет их в LLM повторно, даже если
+    они попали в drop_ids (там они были «пустыми»; игра показывает по-русски).
     """
+    # --- GAME-PO pre-pass (общий для normal и fix/scope). Только game.po слой.
+    if PRE_FILTER_ENABLED:
+        try:
+            _gpm = prefilter.game_po_map()
+        except Exception:
+            _gpm = {}
+        if _gpm:
+            _gp_hit = 0
+            for e in entries:
+                i = str(e.get("i"))
+                if i in done_map:
+                    continue          # уже решено (resume/force/ручное) — не трогаем
+                en = (e.get("original") or "").strip()
+                ru = _gpm.get(en.lower())
+                if ru and ru.lower() != en.lower():
+                    done_map[i] = apply_dict(en, ru)
+                    GAME_SKIP.add(i)
+                    _gp_hit += 1
+            if _gp_hit:
+                log(f"  [game-po] {_gp_hit} строк — RU уже в .по игры; берут готовое, "
+                    f"не в кэш/CSV/LLM (игра локализует сама)")
     todo = [e for e in entries if str(e["i"]) not in done_map]
     # 2026-09-23 (точечный перевод): если задан scope — переводим ТОЛЬКО его,
     # даже если строки уже в done_map (это «--force только для этих строк»).
@@ -769,6 +809,11 @@ def translate_entries(entries, done_map, name, ctx, todo_scope=None):
                 n_reused += 1
                 # apply_dict: если en в exact — берём канон RU; иначе подставляем как есть
                 done_map[str(e["i"])] = apply_dict(en, ru)
+                # GAME-PO SKIP: если RU пришёл из .po ИГРЫ — игра сама рендерит
+                # строку в target_lang. НЕ пишем такую строку в кэш/маппинг (и
+                # export_mod_csv её опустит), чтобы дельта была минимальной.
+                if src == "game.po":
+                    GAME_SKIP.add(str(e["i"]))
                 continue
             keep.append(e)
         todo = keep
@@ -935,6 +980,11 @@ def export_mod_csv(target, entries, done):
             i = str(e.get("i"))
             orig = (e.get("original") or "").strip()
             ru = (done.get(i) or "").strip()
+            # GAME-PO SKIP: строка уже локализована в .po игры (локаль
+            # target_lang) — игра отрисует её сама; не наша работа, не в CSV.
+            if _in_game_skip(i):
+                n_skipped += 1
+                continue
             # finished_row: реальный перевод ИЛИ пустая переводимая строка (для Excel)
             if not finished_row(orig, ru or None):
                 n_skipped += 1
@@ -1206,6 +1256,8 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
                 ru, _src = prefilter.lookup(en)
                 if ru and str(ru).strip() and str(ru).strip().lower() != en.strip().lower():
                     done[str(e["i"])] = str(ru)
+                    if _src == "game.po":
+                        GAME_SKIP.add(str(e["i"]))
                     reused += 1
             if reused:
                 log(f"  [no-llm] prefill из локальных источников: {reused} строк")
@@ -1217,10 +1269,12 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
         if filled:
             from validate_translation import has_real_translation as _hr
             _e_by_i = {str(e.get("i")): (e.get("original") or "").strip() for e in entries}
-            _kept = [(k, v) for k, v in done.items() if _hr(_e_by_i.get(k, ""), str(v))]
+            _kept = [(k, v) for k, v in done.items()
+                     if _hr(_e_by_i.get(k, ""), str(v)) and not _in_game_skip(k)]
             json.dump([{"i": int(k), "ru": v} for k, v in sorted(_kept, key=lambda kv: int(kv[0]))],
                       open(mfile, "w", encoding="utf-8"), ensure_ascii=False)
-            log(f"  [no-llm] кэш: {len(_kept)} строк сохранено в {os.path.basename(mfile)}")
+            log(f"  [no-llm] кэш: {len(_kept)} строк сохранено в {os.path.basename(mfile)}"
+                + (f" ({len(GAME_SKIP)} строк игры не в кэш — локализует сама игра)" if GAME_SKIP else ""))
         try:
             export_mod_csv(target, entries, done)
             log(f"  [no-llm] CSV готов: {os.path.basename(target)[:-4]}.translate.csv "
@@ -1245,6 +1299,21 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
     unfilled = len(entries) - filled
     log(f"  coverage: {filled}/{len(entries)}" + (f"  ({unfilled} пропущено)" if unfilled else ""))
     if filled == 0:
+        # 2026-09-24: ВСЁ в этом моде уже локализовано .по игры (строки в
+        # GAME_SKIP) — законный финал «игра отрисует сама»: кэш пустой,
+        # .mod не трогаем, CSV-экспорт (без game-po-строк).
+        if filled == 0 and any(_in_game_skip(str(e.get("i"))) for e in entries):
+            _need_n = [str(e.get("i")) for e in entries if not _in_game_skip(e.get("i"))]
+            if not _need_n:
+                os.makedirs(STATE, exist_ok=True)
+                json.dump([], open(mfile, "w", encoding="utf-8"), ensure_ascii=False)
+                log(f"  [game-po] все {len(entries)} строк уже в .по игры (локаль {TARGET_LANG}) — "
+                    f"в кэш/CSV/LLM не записываю, игра отрисует сама. [OK]")
+                try:
+                    export_mod_csv(target, entries, done)
+                except Exception:
+                    pass
+                return True
         log("  [!] ничего не переведено - НЕ применяю (оригинальный .mod не тронут)")
         return False
     # --- финальный аудит (без LLM): есть ли РЕАЛЬНО валидные переводы? ---
@@ -1275,7 +1344,8 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
     # сохранение оригинала (apply не трогает её), что и нужно.
     from validate_translation import has_real_translation
     _e_by_i = {str(e.get("i")): (e.get("original") or "").strip() for e in entries}
-    _kept = [(k, v) for k, v in done.items() if has_real_translation(_e_by_i.get(k, ""), str(v))]
+    _kept = [(k, v) for k, v in done.items()
+             if has_real_translation(_e_by_i.get(k, ""), str(v)) and not _in_game_skip(k)]
     json.dump([{"i": int(k), "ru": v} for k, v in sorted(_kept, key=lambda kv: int(kv[0]))],
               open(mfile, "w", encoding="utf-8"), ensure_ascii=False)
     _dropped_n = len(done) - len(_kept)
