@@ -140,19 +140,15 @@ SYS_PROMPT, USER_PROMPT_TMPL = load_prompt()
 DICT_PATH  = T.get("dict", "dict.json")
 if not os.path.isabs(DICT_PATH):
     DICT_PATH = os.path.join(HERE, DICT_PATH)
-DICT = {"exact": {}, "words": set()}
+DICT = {"exact": {}, "words": {}}
 if os.path.isfile(DICT_PATH):
     d = json.load(open(DICT_PATH, encoding="utf-8-sig"))
     DICT["exact"] = {k.lower().strip(): v for k, v in (d.get("exact") or {}).items()}
-    raw_words = d.get("words") or {}
-    # words = МАРКЕРА ПОЛИТИКИ: имена, безопасные для word-boundary подстановки
-    # (многословные / одиночные >=8 симв.). Всегда words ⊆ exact, значения берутся
-    # ОТТУДА (единственный источник values). Форма в файле: список [названия]
-    # (реже — старый dict {name:value}, значения игнорируются).
-    if isinstance(raw_words, dict):
-        DICT["words"] = {k.lower().strip() for k in raw_words}
-    else:
-        DICT["words"] = {w.lower().strip() for w in raw_words}
+    # words = {en: ru} — словари «безопасных» (многословных или >=8 симв.),
+    # которые МОЖНО подставлять word-boundary внутри длинной фразы.
+    # Короткие ambiguous (food/power/human) — только в exact (full-match).
+    # Значения В words ДОЛЖНЫ быть идентичны exact (иначе exact побеждает).
+    DICT["words"] = {k.lower().strip(): v for k, v in (d.get("words") or {}).items()}
 
 # ---- Pre-LLM filter (СЛОЙ 1 regex + СЛОЙ 2 reuse) ----
 # СЛОЙ 2: пул готовых EN->RU переводов — dict.json exact (канон) > .po игры >
@@ -253,11 +249,14 @@ PROGRESS = {"progress": None}
 
 # ---------------- dictionary ----------------
 def dict_block_for_prompt():
-    """Словарь в промпте: ОБЪЕДИНЕНИЕ exact ∪ words, каждый ключ — ОДИН раз.
-    values — только из exact (единственный источник); words = лишь маркеры
-    безопасных word-boundary терминов (дублей значений в файле нет).
-    exact побеждает при конфликте ключей."""
+    """Словарь в промпте: ОБЪЕДИНЕНИЕ exact ∪ words, каждый ключ — ОДИН раз
+    (раньше два блока дублировали 113 общих записей — мёртвый груз контекста).
+    Since words ⊆ exact with identical values, the union == exact (153 lines,
+    previously 266 lines of which 113 were duplicates). Both formats of the
+    words file (dict {en:ru} and name list) are supported."""
     merged = {}
+    for en, ru in (DICT.get("words") or {}).items():
+        merged[en.lower().strip()] = ru
     for en, ru in (DICT.get("exact") or {}).items():
         merged[en.lower().strip()] = ru
     if not merged:
