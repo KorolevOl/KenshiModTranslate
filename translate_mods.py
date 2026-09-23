@@ -1570,7 +1570,7 @@ def main():
         f"reasoning_effort={REASONING_EFFORT}  temperature={TEMPERATURE}  "
         f"enable_thinking={'ON' if not THINKING_OFF else 'OFF'}")
     log(f"dict={ ('+' + str(len(DICT['exact'])) + ' exact / +' + str(len(DICT['words'])) + ' safe-terms (' + DICT_PATH + ')') if (DICT['exact'] or DICT['words']) else 'off'}")
-    log(f"po_hints={'ON' if _PO_HINTS_ENABLED else 'OFF'} (до {_PO_HINTS_MAX} редких пар из {GAME}/locale/ru_RU под текущий чанк)")
+    log(f"po_hints={'ON' if _PO_HINTS_ENABLED else 'OFF'} (до {_PO_HINTS_MAX} редких пар из {GAME}/locale/{TARGET_LANG} под текущий чанк)")
     _ps = prefilter.pool_size()
     log(f"prefilter={'ON' if PRE_FILTER_ENABLED else 'OFF'} (пул готовых переводов: {_ps} пар из dict.json/.по игры/кешей модев — reuse вместо LLM)")
     log(f"prompt: {PROMPT_FILE}")

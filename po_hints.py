@@ -7,7 +7,7 @@
   ТОЛЬКО то, что пересекается с текущими строками батча — и только то, чего НЕТ
   в dict.json (уже в промпте — дублировать не нужно).
 
-Источники (конфиг paths.game, locale/ru_RU/):
+Источники (конфиг paths.game, locale/<target_lang>/, target_lang из config.json):
   gamedata.po            — названия объектов/рас/фракций/построек
   LC_MESSAGES/main.po    — UI, категории, диалоги
 
