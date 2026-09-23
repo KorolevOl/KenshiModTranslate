@@ -2,13 +2,10 @@
 
 ![kenshi-mod-translate](docs/kenshi-mod-translate.svg)
 
-Моды Steam Workshop И ВСТРОЕННЫЕ МОДЫ ИГРЫ (`kenshi\data\rebirth.mod`, `Dialogue.mod`, `Newwworld.mod`, `kenshi\mods\<мод>`) → на русский. Локальный ИИ переводит, ты можешь править
+Моды Steam Workshop и ручные моды (`kenshi\mods\<мод>`) И ВСТРОЕННЫЕ МОДЫ ИГРЫ (`kenshi\data\rebirth.mod`, `Dialogue.mod`, `Newwworld.mod`) → на русский. Конвейер не знает языков — любой язык-источник, который понимает подключённая LLM. Локальный ИИ переводит, ты можешь править
 каждую фразу в `<имя-мода>.translate.csv` (Excel) и пересобирать `.mod`. Перевод пишется
 **на месте** — в папке мода в Steam / в `kenshi\data\`, в `mods\` ничего не копируется.
 Резервная копия оригинала — рядом (`.orig_<хэш>.backup`).
-править каждую фразу в `<имя-мода>.translate.csv` (Excel) и пересобирать `.mod`.
-Перевод пишется **на месте** — в папке мода в Steam / в `kenshi\data\`, в `mods\`
-ничего не копируется. Резервная копия оригинала — рядом (`.orig_<хэш>.backup`).
 
 ---
 
@@ -46,7 +43,16 @@ install.bat
 ./translate_mods.bat
 ```
 
-Прогресс-бары ALL/NOW (счётчик — в токенах). `Ctrl+C` останавливает без потери
+Откроется **меню выбора** (запуск без параметров):
+
+```
+[1] Перевести ВСЁ — Steam Workshop + кенши-папка mods\
+[2] Только Steam Workshop
+[3] Только вложенные моды кенши (kenshi\mods\<мод>)
+[0] Выход
+```
+
+Введите `1`, `2`, `3` (или `0` — выход). Прогресс-бары ALL/NOW (счётчик — в токенах). `Ctrl+C` останавливает без потери
 прогресса; повторный запуск продолжает с того же места.
 
 ---
@@ -440,10 +446,10 @@ prefilter (reuse без LLM) и словарь работают как есть.
 ## 🚀 Запуск перевода
 
 ```
-./translate_mods.bat                        # ВСЕ моды Steam Workshop (спросит [y/N])
-./translate_mods.bat --steam                # то же самое, явно
-./translate_mods.bat --mods                 # ВСЕ моды из kenshi\mods\<мод>\
-./translate_mods.bat --all                  # Steam Workshop + kenshi\mods\<мод>\
+./translate_mods.bat                        # МЕНЮ выбора: [1] всё  [2] steam  [3] mods  [0] выход
+./translate_mods.bat --all                  # Steam Workshop + kenshi\mods\<мод>\  (без меню)
+./translate_mods.bat --steam                # только Steam Workshop (без меню)
+./translate_mods.bat --mods                 # только kenshi\mods\<мод>\  (без меню)
 ./translate_mods.bat "Pocket Change 2.0"    # один мод по имени
 ./translate_mods.bat 1173662576             # один мод по **Steam-ID** (уникальный номер мода в Workshop,
                                                                  # виден в ссылке steamcommunity.com/shared/filedetails/...)
@@ -458,9 +464,9 @@ prefilter (reuse без LLM) и словарь работают как есть.
 
 | Флаг | Что делает |
 |---|---|
-| `--steam` | **«Все моды» = только Steam Workshop** (то же, что и без аргумента — для явно-сти) |
-| `--mods` | **«Все моды» = только `kenshi\mods\<мод>\*.mod`** (ручные, не Workshop) |
-| `--all` | **«Все моды» = Steam Workshop + `kenshi\mods\<мод>\*.mod`** (всё, что можно автоматом) |
+| `--steam` | **«Все моды» = только Steam Workshop** (те же, что пункт `1` меню, но без меню) |
+| `--mods` | **«Все моды» = только `kenshi\mods\<мод>\*.mod`** (ручные, не Workshop; те же, что пункт `3` меню) |
+| `--all` | **«Все моды» = Steam Workshop + `kenshi\mods\<мод>\*.mod`** (всё, что можно автоматом; те же, что пункт `1` меню) |
 | `--force` | **Пере-перевести всё заново** (игнорирует кэш, резервную копию не трогает) |
 | `--no-llm` | **Не ходить в LLM** — только извлечь строки и создать `<имя>.translate.csv` (пустая колонка RU для ручного перевода). Затем правь Excel → `./assemble_mod.bat "имя"` |
 | `--include-excluded` | Переводить даже моды из `exclude.txt` |
