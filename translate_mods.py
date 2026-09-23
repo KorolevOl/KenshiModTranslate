@@ -245,16 +245,25 @@ PROGRESS = {"progress": None}
 
 # ---------------- dictionary ----------------
 def dict_block_for_prompt():
-    lines = []
-    if DICT["exact"]:
-        lines.append("ОБЯЗАТЕЛЬНЫЕ ТОЧНЫЕ СТРОКИ — если английская строка входа равна одному из этих ключей (без учёта регистра), русское значение ДОЛЖНО быть ровно это:")
-        for en, ru in sorted(DICT["exact"].items()):
-            lines.append(f'  "{en}" => "{ru}"')
-    if DICT["words"]:
-        lines.append("ОБЯЗАТЕЛЬНЫЕ ТЕРМИНЫ — когда этот английский (или близкий) термин встречается ВНУТРИ строки, в русском выводе используй ровно это слово/фразу (не придумывай другое) для того термина:")
-        for en, ru in sorted(DICT["words"].items()):
-            lines.append(f'  "{en}" => "{ru}"')
-    return "\n".join(lines) if lines else "(пусто)"
+    """Словарь в промпте: ОБЪЕДИНЕНИЕ exact ∪ words, каждый ключ — ОДИН раз.
+    Раньше две секции рисовали одни и те же ключи дважды (113 дублей) —
+    мёртвый груз в контексте LLM. Теперь единый список:
+    - ключ == EN-строка (без учёта регистра) -> значение ровно;
+    - термин ВНУТРИ длинной фразы -> каноническое слово, не своё.
+    exact побеждает при конфликте значений. apply_dict (post-fix) не тронут."""
+    merged = {}
+    for en, ru in (DICT.get("words") or {}).items():
+        merged[en.lower().strip()] = ru
+    for en, ru in (DICT.get("exact") or {}).items():
+        merged[en.lower().strip()] = ru
+    if not merged:
+        return "(пусто)"
+    lines = ["КАНОНИЧЕСКАЯ ЛОКАЛИЗАЦИЯ (EN => RU), каждое имя/раздел меню — РОВНО так, без учёта регистра EN. "
+             "Если EN-строка входа равна ключу — русское значение должно быть ровно это значение (целиком). "
+             "Если ключ — термин ВНУТРИ длинной фразы — используй в переводе именно это каноническое слово/фразу для этого термина (не придумывай синоним):"]
+    for en in sorted(merged):
+        lines.append(f'  "{en}" => "{merged[en]}"')
+    return "\n".join(lines)
 
 def apply_dict(en_original, ru_translated):
     """Post-fix: enforce dictionary so UI keys/categories stay consistent.
