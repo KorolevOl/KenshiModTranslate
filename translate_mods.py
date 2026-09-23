@@ -74,7 +74,11 @@ CLI_DOTS = _resolve(P["modtranslate_cli"])    # 'bin/Release/...dll'
 
 # ---------------- dynamic RU-LOCALES HINTS (po_files.json) ----------------
 import po_hints
-_PO_LOCALES_DIR = P.get("locales_dir") or os.path.join(GAME, "locale", "ru_RU")
+# Целевой язык перевода — из config.json ("target_lang", дефолт ru_RU).
+# Каталог локализации = locale/<target_lang> (Windows-filesystem без учёта
+# регистра, поэтому "ru_ru" и "ru_RU" — один каталог).
+TARGET_LANG = (CFG.get("target_lang") or "ru_RU")
+_PO_LOCALES_DIR = P.get("locales_dir") or os.path.join(GAME, "locale", TARGET_LANG)
 _PO_HINTS_MAX = int(T.get("po_hints_max", 30))
 _PO_HINTS_ENABLED = bool(T.get("po_hints", True))
 po_hints.configure([

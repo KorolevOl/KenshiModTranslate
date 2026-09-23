@@ -1,5 +1,6 @@
 {
   "_help": "Конфиг translate_mods.py. ПУТИ: абсолютные — только для каталогов вне папки проекта (game, workshop на E:); относительные к папке проекта — state, modtranslate_cli, dotnet и т.п. (рабочие из любого CWD). Динамический батч: строки в чанке подбираются под контекстное окно провайдера (context_window токенов, вход+выход), потолок — max_batch_lines строк; короткие строки дают чанк у потолка, длинные — токены ужимают. max_output_tokens: запас под RU-вывод. При сбое чанка — допериод отдельным FIX-барами.",
+  "target_lang": "ru_RU",
   "paths": {
     "game": "E:\\SteamLibrary\\steamapps\\common\\kenshi",
     "workshop": "E:\\SteamLibrary\\steamapps\\workshop\\content\\233860",

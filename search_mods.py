@@ -7,7 +7,8 @@ search_mods.py — поиск фразы по модам Kenshi и по встр
   2) .mod в Workshop
   3) .mod в игре (kenshi/data/*.mod — базовая локализация: rebirth.mod, Dialogue.mod и др.)
   4) .mod в папке kenshi/mods/<mod>/ (ручные моды, не из Workshop)
-  5) .po RU-локализация игры (kenshi/locale/*.po и kenshi/mods/<mod>/locale/*.po)
+  5) .po локализация ЦЕЛЕВОГО языка (config "target_lang", дефолт ru_RU):
+     kenshi/locale/<lang>/*.po, kenshi/mods/<mod>/locale/*.po, locale Workshop-модов
   6) описания модов (desc.txt / *.txt в корневой папке мода, Workshop)
   7) .dll (бинарный поиск, --dll)
 
@@ -39,6 +40,9 @@ P   = CFG["paths"]
 ST        = kmt_paths.resolve(P["state"])
 WORKSHOP  = kmt_paths.resolve(P["workshop"])
 GAME      = kmt_paths.resolve(P["game"])
+TARGET_LANG = (CFG.get("target_lang") or P.get("target_lang") or "ru_RU").lower()
+# Целевой язык локализации: слой .po и RU-фолбэк берут переводы ТОЛЬКО из
+# этого языка (по умолчанию ru_RU). Меняется в config.json: "target_lang".
 
 TRANSLATABLE_KINDS = ("workshop", "game_data", "game_mods")
 
@@ -166,20 +170,32 @@ def find_mod_files_under(root):
 
 
 def find_po_files():
-    out = []
-    main = os.path.join(GAME, "locale")
-    if os.path.isdir(main):
-        for dirpath, dirnames, filenames in os.walk(main):
+    """.po-файлы ЦЕЛЕВОГО языка (config 'target_lang') в game/locale,
+    kenshi\mods и Workshop-модах (locale/**)."""
+    def _collect(root):
+        out = []
+        if not os.path.isdir(root):
+            return out
+        for dirpath, dirnames, filenames in os.walk(root):
             for f in filenames:
                 if f.lower().endswith(".po"):
-                    out.append(os.path.join(dirpath, f))
-    mods_root = os.path.join(GAME, "mods")
-    if os.path.isdir(mods_root):
-        for dirpath, dirnames, filenames in os.walk(mods_root):
-            for f in filenames:
-                if f.lower().endswith(".po"):
-                    out.append(os.path.join(dirpath, f))
-    return out
+                    p = os.path.join(dirpath, f)
+                    if po_file_lang(p) == TARGET_LANG:
+                        out.append(p)
+        return out
+    out = _collect(os.path.join(GAME, "locale")) \
+       + _collect(os.path.join(GAME, "RE_Kenshi", "locale")) \
+       + _collect(os.path.join(GAME, "mods"))
+    if os.path.isdir(WORKSHOP):
+        for moddir in os.listdir(WORKSHOP):
+            out += _collect(os.path.join(WORKSHOP, moddir, "locale"))
+    seen, uniq = set(), []
+    for p in out:
+        q = os.path.normcase(p)
+        if q not in seen:
+            seen.add(q)
+            uniq.append(p)
+    return uniq
 
 
 def find_desc_files_under(root):
@@ -411,6 +427,36 @@ def _po_norm(s):
     return re.sub(r"\s+", " ", (s or "")).strip().lower()
 
 
+_LOCALE_SEG_RE = re.compile(r"[A-Za-z]{2}_[A-Z]{2}")
+_PO_LANG_MEMO = {}
+
+def po_file_lang(path):
+    """Язык .po-файла: сегмент xx_YY в пути (locale/ru_RU/…), а если его нет —
+    из хедера "Language: xx_YY". Мемоизировано. Возвращает 'xx_yy' в нижнем
+    регистре или '' (не удалось определить)."""
+    key = os.path.normcase(os.path.abspath(os.fspath(path)))
+    if key in _PO_LANG_MEMO:
+        return _PO_LANG_MEMO[key]
+    lang = ""
+    m = None
+    for seg in re.split(r"[\\/]", path or ""):
+        m = _LOCALE_SEG_RE.fullmatch(seg or "")
+        if m:
+            lang = seg.lower()
+            break
+    if not lang:
+        try:
+            head = open(path, encoding="utf-8", errors="replace").read(4096)
+            m = re.search(r'^"Language:\s*([A-Za-z]{2}_[A-Z]{2})"', head, re.M) or \
+                re.search(r"Language:\s*([A-Za-z]{2}_[A-Z]{2})", head)
+            if m:
+                lang = m.group(1).lower()
+        except Exception:
+            lang = ""
+    _PO_LANG_MEMO[key] = lang
+    return lang
+
+
 def _po_pairs(path):
     """[(en, ru)] пар из файла .po (только с непустым RU), мемоизировано."""
     key = os.path.normcase(os.path.abspath(os.fspath(path)))
@@ -425,26 +471,20 @@ def _po_pairs(path):
 
 
 def _po_indexes(roots):
-    """{norm(msgid): ru} по .po из kаталогов; ru_RU приоритетнее en/остальных."""
+    """{norm(msgid): ru} по .po целевого языка (config "target_lang")."""
     files = []
     for root in roots:
         if not root or not os.path.isdir(root):
             continue
         for dp, dn, fn in os.walk(root):
             for f in fn:
-                if f.lower().endswith(".po"):
-                    files.append(os.path.join(dp, f))
-
-    def _prio(p):
-        norm = p.lower().replace("\\", "/")
-        score = 0
-        if "ru_ru" in norm:
-            score -= 100
-        if "en_gb/" in norm or "en_us/" in norm:
-            score += 50
-        return (score, norm)
-
-    files.sort(key=_prio)
+                p = os.path.join(dp, f)
+                if not f.lower().endswith(".po"):
+                    continue
+                if po_file_lang(p) != TARGET_LANG:
+                    continue  # не целевой язык — не берём вообще
+                files.append(p)
+    files.sort(key=lambda p: p.lower())
     idx = {}
     for p in files:
         for en, ru in _po_pairs(p):
@@ -488,9 +528,11 @@ def po_rows(hits, needle, cap=200):
             seen_f.add(q)
             files.append(p)
     # Для слоя 5 хотим видеть ВСЕ строки (с RU и без) — используем
-    # textutil.parse_po_file_all. (parse_po_file фильтрует «без RU»)
+    # textutil.parse_po_file_all. Только ЦЕЛЕВОЙ язык (config "target_lang").
     rows, seen = [], set()
     for p in files:
+        if po_file_lang(p) != TARGET_LANG:
+            continue
         name = _mod_name_for_path(p)
         try:
             pairs = list(textutil.parse_po_file_all(p))
@@ -764,7 +806,7 @@ def main():
                      show_all=args.all, cap=cap)
 
     # --- слои 5-6-7: вспомогательные (.po / .desc / .dll) — тоже таблицей ---
-    _print_layer("слой 5: .po RU-локализация", len(hits["po"]),
+    _print_layer(f"слой 5: .po локализация ({TARGET_LANG})", len(hits["po"]),
                  po_rows(hits["po"], needle), show_all=args.all, cap=cap)
     _print_layer("слой 6: описания (.txt)", len(hits["desc"]),
                  snippet_rows(hits["desc"]), cap=cap)
