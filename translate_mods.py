@@ -140,11 +140,19 @@ SYS_PROMPT, USER_PROMPT_TMPL = load_prompt()
 DICT_PATH  = T.get("dict", "dict.json")
 if not os.path.isabs(DICT_PATH):
     DICT_PATH = os.path.join(HERE, DICT_PATH)
-DICT = {"exact": {}, "words": {}}
+DICT = {"exact": {}, "words": set()}
 if os.path.isfile(DICT_PATH):
     d = json.load(open(DICT_PATH, encoding="utf-8-sig"))
     DICT["exact"] = {k.lower().strip(): v for k, v in (d.get("exact") or {}).items()}
-    DICT["words"] = {k.lower().strip(): v for k, v in (d.get("words") or {}).items()}
+    raw_words = d.get("words") or {}
+    # words = МАРКЕРА ПОЛИТИКИ: имена, безопасные для word-boundary подстановки
+    # (многословные / одиночные >=8 симв.). Всегда words ⊆ exact, значения берутся
+    # ОТТУДА (единственный источник values). Форма в файле: список [названия]
+    # (реже — старый dict {name:value}, значения игнорируются).
+    if isinstance(raw_words, dict):
+        DICT["words"] = {k.lower().strip() for k in raw_words}
+    else:
+        DICT["words"] = {w.lower().strip() for w in raw_words}
 
 # ---- Pre-LLM filter (СЛОЙ 1 regex + СЛОЙ 2 reuse) ----
 # СЛОЙ 2: пул готовых EN->RU переводов — dict.json exact (канон) > .po игры >
@@ -246,14 +254,10 @@ PROGRESS = {"progress": None}
 # ---------------- dictionary ----------------
 def dict_block_for_prompt():
     """Словарь в промпте: ОБЪЕДИНЕНИЕ exact ∪ words, каждый ключ — ОДИН раз.
-    Раньше две секции рисовали одни и те же ключи дважды (113 дублей) —
-    мёртвый груз в контексте LLM. Теперь единый список:
-    - ключ == EN-строка (без учёта регистра) -> значение ровно;
-    - термин ВНУТРИ длинной фразы -> каноническое слово, не своё.
-    exact побеждает при конфликте значений. apply_dict (post-fix) не тронут."""
+    values — только из exact (единственный источник); words = лишь маркеры
+    безопасных word-boundary терминов (дублей значений в файле нет).
+    exact побеждает при конфликте ключей."""
     merged = {}
-    for en, ru in (DICT.get("words") or {}).items():
-        merged[en.lower().strip()] = ru
     for en, ru in (DICT.get("exact") or {}).items():
         merged[en.lower().strip()] = ru
     if not merged:
@@ -267,23 +271,21 @@ def dict_block_for_prompt():
 
 def apply_dict(en_original, ru_translated):
     """Post-fix: enforce dictionary so UI keys/categories stay consistent.
-    Source = DICT["exact"] (единый источник канона; words ⊆ exact убраны
-    дубликатом 2026-09-23 — все 113 слов были уже в exact с теми же значениями).
-    1) exact: целая EN-строка = ключу -> вернуть каноническое RU (guaranteed).
-    2) word-boundary: ключ (термин или целая фраза) ВНУТРИ EN-строки -> если
-       LLM оставила EN-фразу в переводе, подставить канон (safety-net).
-       Regex срабатывает ТОЛЬКО если EN-литерал присутствует в RU-строке.
-    """
+    1) exact: цела EN-строка = ключу -> вернуть каноническое RU (guaranteed).
+    2) words (безопасное подмножество): термин ВНУТРИ EN-строки -> если LLM
+       оставила EN-literал в переводе, подставить канон из exact (safety-net).
+    Короткие ambiguous-слова (food/power/human...) НЕ в words -> НЕ
+    word-boundary, чтобы слепая замена «power» во фразе не искажала смысл."""
     low = en_original.strip().lower()
     if low in DICT["exact"]:
         return DICT["exact"][low]
     out = ru_translated
-    for en, ru in DICT["exact"].items():
+    for en in DICT["words"]:
         if not en:
             continue
-        # word-boundary, case-insensitive. (?![A-Za-z]) — не внутри бОльшего
-        # EN-токена (Fishmen ≠ Fishman), (?<![A-Za-z]) — не сохранный хвост.
-        # Для многословных фраз — точная подстрока с boundary по краям.
+        ru = DICT["exact"].get(en)
+        if not ru:
+            continue
         pat = re.compile(r"(?<![A-Za-z])" + re.escape(en) + r"(?![A-Za-z])", re.IGNORECASE)
         out = pat.sub(ru, out)
     return out
@@ -467,7 +469,9 @@ def llm_call(strings):
             try:
                 hbk = po_hints.hints_block(
                     strings,
-                    dict_keys=set(DICT["exact"].keys()) | {k for k in DICT["words"].keys()},
+                    # words ⊆ exact (всегда; words = имена, значения из exact),
+                    # поэтому объединение = просто key set of exact.
+                    dict_keys=set(DICT["exact"].keys()),
                     max_hints=_PO_HINTS_MAX,
                 )
                 if hbk:
@@ -1554,7 +1558,7 @@ def main():
     log(f"retry={RETRIES}  force_retranslate={'ON' if FORCE else 'off'}  "
         f"reasoning_effort={REASONING_EFFORT}  temperature={TEMPERATURE}  "
         f"enable_thinking={'ON' if not THINKING_OFF else 'OFF'}")
-    log(f"dict={ ('+' + str(len(DICT['exact'])) + ' exact / +' + str(len(DICT['words'])) + ' terms (' + DICT_PATH + ')') if (DICT['exact'] or DICT['words']) else 'off'}")
+    log(f"dict={ ('+' + str(len(DICT['exact'])) + ' exact / +' + str(len(DICT['words'])) + ' safe-terms (' + DICT_PATH + ')') if (DICT['exact'] or DICT['words']) else 'off'}")
     log(f"po_hints={'ON' if _PO_HINTS_ENABLED else 'OFF'} (до {_PO_HINTS_MAX} редких пар из {GAME}/locale/ru_RU под текущий чанк)")
     _ps = prefilter.pool_size()
     log(f"prefilter={'ON' if PRE_FILTER_ENABLED else 'OFF'} (пул готовых переводов: {_ps} пар из dict.json/.по игры/кешей модев — reuse вместо LLM)")
