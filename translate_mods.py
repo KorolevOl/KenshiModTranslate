@@ -97,6 +97,11 @@ RETRIES    = int(T.get("http_retries", 3))
 FORCE      = bool(T.get("force_retranslate", False)) or "--force" in sys.argv
 NO_CACHE   = os.environ.get("KENSHI_NO_CACHE") == "1"
 NO_LLM     = bool(T.get("no_llm", False)) or "--no-llm" in sys.argv  # 2026-09-21: только CSV, без LLM
+# 2026-09-23: точечный перевод — только выбранные строки, без полного пере-перевода.
+# --lines "1,5-10,42" — номера строк в .translate.csv (1-based, как в Excel)
+# --text "фраза" (можно несколько) — частичное совпадение в "original", регистр не учитывается
+LINES_SPEC    = None   # set[int] или None
+TEXT_PATTERNS = []     # list[str]
 
 # Thinking (reasoning) off — the same mechanism as Hermes Agent (extra_body →
 # chat_template_kwargs). Token-neutral: model spends no budget on reasoning,
@@ -670,7 +675,7 @@ def plan_chunk(prefix, ovh, start=0, cap_limit=None):
     # чем 4 не помещающиеся в контекст (провайдер упрётся в лимит).
     return max(1, best)
 
-def translate_entries(entries, done_map, name, ctx):
+def translate_entries(entries, done_map, name, ctx, todo_scope=None):
     """Перевод оставшихся строк (батченно, resumable).
 
     Стратегия (2026-09-19, по просьбе пользователя):
@@ -687,13 +692,21 @@ def translate_entries(entries, done_map, name, ctx):
     • если строки всё равно не сданы — пустыми; подхватят verify --fix / resume.
     """
     todo = [e for e in entries if str(e["i"]) not in done_map]
+    # 2026-09-23 (точечный перевод): если задан scope — переводим ТОЛЬКО его,
+    # даже если строки уже в done_map (это «--force только для этих строк»).
+    if todo_scope is not None:
+        scope = {str(i) for i in todo_scope}
+        todo = [e for e in entries if str(e["i"]) in scope]
     # 2026-09-19: оставляем ТОЛЬКО строки, которым по единому классификатору
     # НУЖЕН перевод (empty/echo/latin/ph_lost/mixed при пустом RU). Пустые
     # onomatopoeia/entry-ID/already_ru ЛЛМ НЕ переведёт (rightfully) — раньше
     # они входили в чанк, захлёбывали squeal/LM и роняли ВЕСЬ чанк (len
     # mismatch), унося с собой соседние РЕАЛЬНО битые строки (NewRecruits:
     # 813/4689 упали из-за 4688 squeal + 4922/4923 entry-ID).
-    todo = [e for e in todo if _needs_translation(e.get("original") or "")]
+    if todo_scope is None:
+        todo = [e for e in todo if _needs_translation(e.get("original") or "")]
+    # else: точечный выбор (--rows/--text/--pick) — фильтр НЕ применяем:
+    # пользователь сам решил, что эту строку нужно перевести заново.
     # ---- ПРЕ-LLM ФИЛЬТР (2026-09-21, по просьбе пользователя) ----
     # Два слоя до отправки батча LLM:
     #   СЛОЙ 1 — «нечего переводить» (regex): чистая кириллица/знаки/числа/
@@ -707,8 +720,16 @@ def translate_entries(entries, done_map, name, ctx):
     n_passthrough = n_reused = 0
     if PRE_FILTER_ENABLED:
         keep = []
+        scope_set = {str(i) for i in todo_scope} if todo_scope else None
         for e in todo:
             en = e.get("original") or ""
+            # 2026-09-23: строка в точечном scope (--rows/--text/--pick) —
+            # ПРопускаем ОБА пре-фильтра (nothing_to_translate + reuse):
+            # не подставляем старый «плохой» или пустой RU из кэша/словарей,
+            # отсылаем в LLM на повторный перевод заново.
+            if scope_set and str(e.get("i")) in scope_set:
+                keep.append(e)
+                continue
             if prefilter.nothing_to_translate(en):
                 n_passthrough += 1
                 # 2026-09-22: passthrough (RU=EN) НЕ пишем в кэш — строка
@@ -904,7 +925,104 @@ def run_dotnet(args):
     return r
 
 # ---------------- one mod ----------------
-def translate_one(m, index, total_mods, ctx, drop_ids=None):
+def _csv_lineno_to_originals(csd):
+    """Карта: номер строки CSV (1-based, как в Excel) → оригинал (столбец 1).
+    2026-09-23: для точечного пере-перевода (--lines)."""
+    import csv as _csv
+    out = {}
+    try:
+        with open(csd, encoding="utf-8-sig", newline="") as f:
+            for n, row in enumerate(_csv.reader(f, delimiter="|"), 1):
+                if row and row[0].strip():
+                    out[n] = row[0].strip()
+    except FileNotFoundError:
+        pass
+    return out
+
+def parse_lines_spec(spec):
+    """«12,40-55,99» → {12, 40..55, 99}. Пусто/мусор → ошибка ValueError."""
+    out = set()
+    for part in spec.replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            a, _, b = part.partition("-")
+            a, b = a.strip(), b.strip()
+            if not (a.isdigit() and b.isdigit()) or int(a) > int(b):
+                raise ValueError(f"диапазон «{part}» не похож на a-b")
+            out.update(range(int(a), int(b) + 1))
+        elif part.isdigit():
+            out.add(int(part))
+        else:
+            raise ValueError(f"«{part}» не похоже на номер строки")
+    if not out:
+        raise ValueError(f"пустой список --lines: {spec!r}")
+    return set(x for x in out if x > 0)
+
+def resolve_scope(lines_spec, text_patterns, entries, csd_path, log=print):
+    """2026-09-23: точечный перевод — резолвит выбор в индексы e["i"] из entries.
+
+    lines_spec: set[int] — номера строк в <имя-мода>.translate.csv (1-based, как в Excel)
+    text_patterns: list[str] — частичное совпадение (casefold) в original
+    entries: list of {"i": int, "original": str, ...}
+    csd_path: путь к .translate.csv (нужен только для lines_spec)
+
+    Возвращает (scope:set[int], errors:list[str]).
+    scope пусто = ничего не выбрано.
+    Юни­т-тестируемо: не зовёт LLM, не пишет файлы.
+    """
+    by_orig = {}
+    for e in entries:
+        o = (e.get("original") or "").strip().lower()
+        if o:
+            by_orig.setdefault(o, set()).add(e["i"])
+
+    scope = set()
+    errors = []
+
+    # LINES_SPEC: CSV-строки → original (столбец 1 CSV) → индексы entries
+    if lines_spec:
+        map_line_to_orig = {}
+        if os.path.isfile(csd_path):
+            try:
+                import csv as _csv
+                with open(csd_path, encoding="utf-8-sig", newline="") as f:
+                    for n, row in enumerate(_csv.reader(f, delimiter="|"), 1):
+                        if row and row[0].strip():
+                            map_line_to_orig[n] = row[0].strip().lower()
+            except Exception as ex:
+                errors.append(f"--lines не смог прочитать CSV: {ex}")
+        else:
+            errors.append(
+                f"--lines: CSV {os.path.basename(csd_path)} не найден — "
+                f"создай его: translate_mods.bat --no-llm <мод>")
+        for ln in lines_spec:
+            orig = map_line_to_orig.get(ln)
+            if orig is None:
+                errors.append(f"--lines: строка {ln} не в CSV/оригиналах")
+                continue
+            if orig in by_orig:
+                scope |= by_orig[orig]
+            else:
+                errors.append(f"--lines: строка {ln} («{orig}») не найдена в .mod")
+
+    # TEXT_PATTERNS: частичное совпадение (casefold) в entries' original
+    for pat in text_patterns:
+        p = pat.lower()
+        hits = set()
+        for o, idxs in by_orig.items():
+            if p in o:
+                hits |= idxs
+        if hits:
+            scope |= hits
+        else:
+            errors.append(f"--text: {pat!r} не найдено")
+
+    return scope, errors
+
+
+def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
     """Translate a mod and apply the .mod (RU).
 
     drop_ids: optional iterable of entry indices to DROP from the resume
@@ -977,6 +1095,25 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None):
         entries = json.load(open(efile, encoding="utf-8"))
         if PR is not None: PR.idle()
         log(f"  извлечено: {len(entries)} строк")
+    # 2026-09-23: точечный перевод — резолвим LINES_SPEC/TEXT_PATTERNS
+    # (глобальные, заданные в main) → индексы e["i"] в entries, через resolve_scope.
+    # LINES_SPEC использует CSV-строки (1-based, из <имя-мода>.translate.csv);
+    # TEXT_PATTERNS — частичное совпадение в original (столбец 1 CSV).
+    if (LINES_SPEC or TEXT_PATTERNS) and not todo_scope:
+        base = os.path.basename(target)
+        if base.lower().endswith(".mod"):
+            base = base[:-4]
+        csd = os.path.join(os.path.dirname(target), base + ".translate.csv")
+        _scope, _errs = resolve_scope(LINES_SPEC, TEXT_PATTERNS, entries, csd)
+        for _er in _errs:
+            log(f"  [!] {_er}")
+        if _scope:
+            log(f"  [scope] выбрано: {sorted(_scope)} ({len(_scope)} шт.)")
+            todo_scope = _scope
+        else:
+            log("  [!] --lines/--text ничего не выбрал — пропускаю "
+                f"(остальные строки НЕ трогаются)")
+            return True
     # 2. translate (resume; drop previously-failed empty rows)
     done = {}
     if FORCE:
@@ -1012,6 +1149,16 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None):
             if removed:
                 log(f"  [fix] пере-переведу ТОЛЬКО {len(removed)} проблемных строк "
                     f"(остальные {len(done)} хороших сохранены)")
+        # 2026-09-23: точечный перевод — выбранные строки снимаем из кэша, чтобы
+        # LLM перевела именно их (остальные {len(done)} остаются в кэше/apply).
+        if todo_scope:
+            scope = {str(x) for x in todo_scope}
+            removed = [k for k in scope if k in done]
+            for k in removed:
+                done.pop(k, None)
+            if removed:
+                log(f"  [rows] пере-переведу ТОЛЬКО {len(removed)} выбранной строки/строк "
+                    f"(остальные {len(done)} перевода сохранены и не трогаются)")
         if done:
             log(f"  resume: {len(done)}/{len(entries)} уже готово")
     CUR["mapref"] = done
@@ -1058,7 +1205,7 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None):
         return True
     if len(done) < len(entries):
         ctx["nmods_done"] = index - 1
-        translate_entries(entries, done, name, ctx)
+        translate_entries(entries, done, name, ctx, todo_scope=todo_scope)
     else:
         # everything already translated — show a full bar for one beat (в токенах)
         if PR is not None:
@@ -1189,6 +1336,49 @@ def main():
             print(f"--temperature: «{sys.argv[i+1]}» не похоже на число (нужно, напр., 0.3)")
             sys.exit(2)
         del sys.argv[i:i + 2]
+    # 2026-09-23: --lines <spec> / --text <фраза> — точечный перевод отдельных
+    # строк, без полного пере-перевода. (См. LINES_SPEC/TEXT_PATTERNS на
+    #верхушке.) --lines: номера строк в <имя-мода>.translate.csv (1-based:
+    # 1 = первая строка CSV, как в Excel; «1,5-10,42»).
+    # --text: частичное совпадение (регистр не учитывается) в оригинале
+    # (столбец 1 CSV / entries' original); можно несколько: --text "foo" --text "bar".
+    if "--lines" in sys.argv:
+        i = sys.argv.index("--lines")
+        if i + 1 >= len(sys.argv) or not sys.argv[i + 1]:
+            print("--lines needs a spec, e.g. --lines \"12,40-55,99\"")
+            return 2
+        try:
+            # set globals before parsing — parse_lines_spec returns set
+            globals()["LINES_SPEC"] = parse_lines_spec(sys.argv[i + 1])
+        except ValueError as ex:
+            print(f"--lines: {ex}")
+            return 2
+        del sys.argv[i:i + 2]
+    if "--text" in sys.argv:
+        seen = set()
+        while "--text" in sys.argv:
+            i = sys.argv.index("--text")
+            if i + 1 >= len(sys.argv) or not sys.argv[i + 1]:
+                print("--text needs a value, e.g. --text \"Whetbone\"")
+                return 2
+            pat = sys.argv[i + 1]
+            if pat not in seen:
+                globals()["TEXT_PATTERNS"].append(pat)
+                seen.add(pat)
+            del sys.argv[i:i + 2]
+    if LINES_SPEC or TEXT_PATTERNS:
+        lbl = []
+        if LINES_SPEC:
+            lbl.append(f"--lines {sorted(LINES_SPEC)}")
+        if TEXT_PATTERNS:
+            lbl.append(f"--text {len(TEXT_PATTERNS)} phrase(s)")
+        # NOTE: --no-llm + --lines = валидный «офлайн-подстановочный частичный»
+        # режим: scope-строки сняты из `done`, prefill подставит из dictionary/кэша
+        # (если там есть), остальные строки CSV не трогаются. LLM не зовётся.
+        log("[i] точечный перевод: " + " + ".join(lbl) + " (LLM спросит ТОЛЬКО об этих строках, остальные не трогаются)")
+        # Предупреждаем: без имени мода будем прогонять через ВСЕ моды (шум).
+        # Не блокируем — user может намеренно искать по текстам по всем.
+        # Подсказку даём на этапе main pool-build (см. ниже).
     # 2026-09-23: --steam / --mods — явные выборки подкаталогов.
     #   --steam : ТОЛЬКО Steam Workshop (workshop\content\233860\<id>)
     #   --mods  : ТОЛЬКО kenshi\mods\<mod>\*.mod (ручные, НЕ Workshop)

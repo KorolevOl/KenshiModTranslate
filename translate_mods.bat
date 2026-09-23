@@ -13,6 +13,9 @@ rem    translate_mods.bat --list-file mods.txt
 rem    translate_mods.bat --temperature 0.3 "Mymod" - override config temperature
 rem    translate_mods.bat --force "Pocket Change" - retranslate even if cached
 rem    translate_mods.bat --include-excluded "X"  - include listed mod
+rem    translate_mods.bat "Mod name" --lines "12,40-55" - retranslate ONLY those CSV line numbers (others untouched)
+rem    translate_mods.bat "Mod name" --text "Whetbone"  - retranslate lines matching text (case-insensitive, no line number needed)
+rem    translate_mods.bat "Mod name" --lines 5 --text "cloud" - combine: line 5 + any line containing "cloud"
 rem  NOTE: built-in game mods (kenshi\data: rebirth, Dialogue, Newwworld)
 rem  are NEVER part of "translate ALL" - request them by name.
 rem  --force can also be set in config.json: "force_retranslate": true
