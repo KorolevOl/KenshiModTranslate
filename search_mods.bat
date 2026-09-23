@@ -9,6 +9,9 @@ rem    search_mods.bat "phrase" --no-translate
 rem    search_mods.bat "phrase" --yes
 rem    search_mods.bat "phrase" --force
 rem    search_mods.bat "phrase" --ru        (only RU hits in cache)
+rem  For each matched row in a .mod (already translated mod) the search ALSO
+rem  prints its TRANSLATION (EN -> RU) from the state cache, whichever side
+rem  (EN or RU) you searched by.
 rem  After search you get a numbered list - type mod numbers
 rem  (comma/space separated) to start translation of those mods.
 rem ============================================================

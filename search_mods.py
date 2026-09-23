@@ -194,6 +194,100 @@ def find_dll_files_under(root):
     return [os.path.join(dp, f) for dp, dn, fn in os.walk(root) for f in fn if f.lower().endswith(".dll")]
 
 
+# ------------------------------------ cache lookup: EN строка -> RU перевод --
+_HASH_MEMO = {}
+_CACHE_MEMO = {}
+_RUROWS_MEMO = {}
+
+def _hash_for_mod(path):
+    """Якорь кеша мода: из соседнего .orig_<h>.backup, иначе md5(файла)."""
+    key = os.path.normcase(os.path.abspath(path))
+    if key in _HASH_MEMO:
+        return _HASH_MEMO[key]
+    import hashlib
+    base = os.path.basename(path)
+    h = None
+    try:
+        for f in os.listdir(os.path.dirname(path)):
+            if f.startswith(base + ".orig_") and f.endswith(".backup"):
+                h = f[len(base) + 6:-len(".backup")]
+                break
+    except Exception:
+        pass
+    if not h:
+        try:
+            h = hashlib.md5(open(path, "rb").read()).hexdigest()[:12]
+        except Exception:
+            h = None
+    _HASH_MEMO[key] = h
+    return h
+
+
+def _load_cache(h):
+    """(entries, mapping i->ru) кеша мода; (None, {}) если кеша нет."""
+    if h in _CACHE_MEMO:
+        return _CACHE_MEMO[h]
+    entries, mapping = None, {}
+    ep = os.path.join(ST, h + "_entries.json")
+    mp = os.path.join(ST, h + "_mapping.json")
+    try:
+        if os.path.isfile(ep):
+            entries = json.load(open(ep, encoding="utf-8"))
+        if os.path.isfile(mp):
+            mapping = {str(x.get("i")): (x.get("ru") or "")
+                       for x in json.load(open(mp, encoding="utf-8"))}
+    except Exception:
+        entries, mapping = None, {}
+    _CACHE_MEMO[h] = (entries, mapping)
+    return _CACHE_MEMO[h]
+
+
+def ru_rows_for_needle(h, needle):
+    """Список (EN-строка, RU-перевод) из кеша мода, где needle встречается
+    в EN-исходнике ИЛИ в RU-переводе строки. Вывод: (EN, RU) парой — всегда видно
+    и оригинал, и перевод, независимо от того, по какой стороне искали."""
+    key = (h, norm(needle))
+    if key in _RUROWS_MEMO:
+        return _RUROWS_MEMO[key]
+    out = []
+    if h:
+        entries, mapping = _load_cache(h)
+        if entries:
+            nd = norm(needle)
+            for e in entries:
+                i = str(e.get("i"))
+                en = e.get("original") or e.get("t") or ""
+                ru = mapping.get(i, "") or ""
+                if not en:
+                    continue
+                if nd in norm(en) or (ru and nd in norm(ru)):
+                    out.append((en, ru))
+    out.sort(key=lambda t: len(t[0]))  # короткие (специфичные) строки выше
+    _RUROWS_MEMO[key] = out
+    return out
+
+
+def _attach_ru(hits, needle):
+    """Для hits в .mod-файлах приписать 'ru_rows' — перевод найденной строки из кеша."""
+    by_path = {}
+    for h in hits:
+        p = h.get("path")
+        if not p or os.path.splitext(p)[1].lower() != ".mod":
+            continue
+        if p not in by_path:
+            chash = _hash_for_mod(p)
+            by_path[p] = ru_rows_for_needle(chash, needle) if chash else []
+        h["ru_rows"] = by_path[p]
+
+
+def _one_line(s, width=160):
+    """Схлопнуть переносы в одну строку, при необходимости урезать."""
+    s = re.sub(r"[\r\n\t ]+", " ", (s or "")).strip()
+    if len(s) > width:
+        s = s[: width - 1] + "…"
+    return s
+
+
 # ---------------------------------------------------------------- search --
 
 def search_all(needle, want_en, want_ru, include_files, include_dll):
@@ -208,14 +302,17 @@ def search_all(needle, want_en, want_ru, include_files, include_dll):
         ws_mods = find_mod_files_under(WORKSHOP)
         for h in _iter_hits_in_all_files(ws_mods, needle, "workshop"):
             hits["workshop"].append(h)
+        _attach_ru(hits["workshop"], needle)
         gd = [os.path.join(GAME, "data", f)
               for f in (os.listdir(os.path.join(GAME, "data")) if os.path.isdir(os.path.join(GAME, "data")) else [])
               if f.lower().endswith(".mod")]
         for h in _iter_hits_in_all_files(gd, needle, "game_data"):
             hits["game_data"].append(h)
+        _attach_ru(hits["game_data"], needle)
         gm = find_mod_files_under(os.path.join(GAME, "mods"))
         for h in _iter_hits_in_all_files(gm, needle, "game_mods"):
             hits["game_mods"].append(h)
+        _attach_ru(hits["game_mods"], needle)
         for h in _iter_hits_in_all_files(find_po_files(), needle, "po", is_po=True):
             hits["po"].append(h)
         for h in _iter_hits_in_all_files(find_desc_files_under(WORKSHOP), needle, "desc"):
@@ -233,22 +330,31 @@ def _iter_hits_in_all_files(files, needle, kind, is_po=False, is_dll=False):
 
 # ---------------------------------------------------------------- main --
 
-def print_hits(label, hits):
+def print_hits(label, hits, needle=None, cap=0):
+    """Печать hits .mod-слоя. Если у hit есть 'ru_rows' (перевод строки из кеша),
+    показывает найденный EN-фрагмент и рядом его RU-перевод."""
+    shown = 0
     for h in hits:
-        if h.get("kind") == "cache":
-            mark = "EN" if (h.get("en") and norm_ignoring_ws(h.get("en", ""))) else "RU"
-            # mark by which one matched
-            print(f"  [КЕШ] {h['mod']}  (row {h['row']} {mark})")
+        path = h["path"]
+        if os.path.normcase(os.path.abspath(path)).startswith(os.path.normcase(os.path.abspath(WORKSHOP)) + os.sep):
+            rel = os.path.relpath(path, WORKSHOP)
+        elif os.path.normcase(os.path.abspath(path)).startswith(os.path.normcase(os.path.abspath(GAME)) + os.sep):
+            rel = os.path.relpath(path, GAME)
         else:
-            path = h["path"]
-            if os.path.normcase(os.path.abspath(path)).startswith(os.path.normcase(os.path.abspath(WORKSHOP)) + os.sep):
-                rel = os.path.relpath(path, WORKSHOP)
-            elif os.path.normcase(os.path.abspath(path)).startswith(os.path.normcase(os.path.abspath(GAME)) + os.sep):
-                rel = os.path.relpath(path, GAME)
-            else:
-                rel = path
-            print(f"  [{label}] {rel}")
+            rel = path
+        print(f"  [{label}] {rel}")
         print(f"     ...{h['snippet']}...")
+        rows = h.get("ru_rows") or []
+        if rows:
+            print(f"     └ перевод этого мода (кэш):")
+            for en, ru in rows[:3]:
+                print(f"        EN: {_one_line(en)}")
+                print(f"        RU: {_one_line(ru)}")
+            if len(rows) > 3:
+                print(f"        (+{len(rows) - 3} ещё строки с этим текстом — показаны первые 3)")
+        shown += 1
+        if cap and shown >= cap:
+            break
 
 
 def norm_ignoring_ws(s):
@@ -287,30 +393,44 @@ def main():
 
     print(f"\n-- слой 1: кеш (state/) — {len(hits['cache'])} совпадений --")
     for h in hits["cache"][:n_state_limit]:
-        mark = "EN+RU" if (h.get("en") and h.get("ru") and norm(needle) in norm(h["en"]) and norm(needle) in norm(h["ru"])) else (
-            "EN" if (h.get("en") and norm(needle) in norm(h["en"])) else "RU")
+        both = (h.get("en") and h.get("ru") and norm(needle) in norm(h["en"]) and norm(needle) in norm(h["ru"]))
+        mark = "EN+RU" if both else ("EN" if (h.get("en") and norm(needle) in norm(h["en"])) else "RU")
         print(f"  [КЕШ] {h['mod']}  (row {h['row']} {mark})")
-        print(f"       ...{h['snippet']}...")
+        en = (h.get("en") or "").strip()
+        ru = (h.get("ru") or "").strip()
+        if en:
+            print(f"     EN: {_one_line(en)}")
+        if ru:
+            print(f"     RU: {_one_line(ru)}")
+        if not en and not ru:
+            print(f"     ...{h['snippet']}...")
     if len(hits["cache"]) > n_state_limit:
         print(f"  ... (+{len(hits['cache']) - n_state_limit} ещё, обрезано для вывода)")
     if not hits["cache"]:
         print("  (ничего не найдено)")
 
+    NMOD_SHOW = 25  # cap на печать .mod-совпадений (числовой список ниже НЕ обрезается)
     if hits["workshop"]:
         print(f"\n-- слой 2: .mod в Workshop — {len(hits['workshop'])} совпадений --")
-        print_hits("MOD/WS", hits["workshop"])
+        print_hits("MOD/WS", hits["workshop"], cap=NMOD_SHOW)
+        if len(hits["workshop"]) > NMOD_SHOW:
+            print(f"  ... (+{len(hits['workshop']) - NMOD_SHOW} ещё; все — в списке для перевода ниже)")
     else:
         print(f"\n-- слой 2: .mod в Workshop — 0 --")
 
     if hits["game_data"]:
         print(f"\n-- слой 3: .mod в игре (data/) — {len(hits['game_data'])} совпадений --")
-        print_hits("GAME", hits["game_data"])
+        print_hits("GAME", hits["game_data"], cap=NMOD_SHOW)
+        if len(hits["game_data"]) > NMOD_SHOW:
+            print(f"  ... (+{len(hits['game_data']) - NMOD_SHOW} ещё; все — в списке для перевода ниже)")
     else:
         print(f"\n-- слой 3: .mod в игре (data/) — 0 --")
 
     if hits["game_mods"]:
         print(f"\n-- слой 4: .mod в игре (mods\\) — {len(hits['game_mods'])} совпадений --")
-        print_hits("GAME/MODS", hits["game_mods"])
+        print_hits("GAME/MODS", hits["game_mods"], cap=NMOD_SHOW)
+        if len(hits["game_mods"]) > NMOD_SHOW:
+            print(f"  ... (+{len(hits['game_mods']) - NMOD_SHOW} ещё; все — в списке для перевода ниже)")
     else:
         print(f"\n-- слой 4: .mod в игре (mods\\) — 0 --")
 
