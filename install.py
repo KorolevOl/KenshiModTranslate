@@ -70,22 +70,23 @@ def step_python():
         bad(f"Python {ver} — нужен 3.10+")
         return False
     ok(f"Python {ver}")
-    # зависимости
-    if not _have("tqdm"):
-        info("устанавливаю tqdm ...")
+    # зависимости (по requirements.txt — tqdm + tabulate)
+    deps = ("tqdm", "tabulate")
+    if not all(_have(d) for d in deps):
+        info("устанавливаю tqdm, tabulate ...")
         base = [sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check"]
         for extra in ([], ["--user"]):
             r = subprocess.run(base + extra + ["-r", str(ROOT / "requirements.txt")],
                                cwd=str(ROOT))
-            if r.returncode == 0 and _have("tqdm"):
-                ok("tqdm установлена" + (" (в пользовательский каталог)" if extra else ""))
+            if r.returncode == 0 and all(_have(d) for d in deps):
+                ok("tqdm + tabulate установлены" + (" (в пользовательский каталог)" if extra else ""))
                 break
         else:
             bad("pip install не удался (PEP 668 / нет прав?)")
-            bad("попробуйте вручную:  python -m pip install --user tqdm")
+            bad("попробуйте вручную:  python -m pip install --user -r requirements.txt")
             return False
     else:
-        ok("tqdm уже установлена")
+        ok("tqdm + tabulate уже установлены")
     return True
 
 

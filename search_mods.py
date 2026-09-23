@@ -288,6 +288,70 @@ def _one_line(s, width=160):
     return s
 
 
+# ============================== TABLITSA (tabulate) ===========================
+def _cwidth(s):
+    """Display-width: ASCII/кириллица = 1, CJK = 2 (для сортировки)."""
+    s = s or ""
+    w = 0
+    for ch in s:
+        o = ord(ch)
+        if (
+            0x1100 <= o <= 0x115F or 0x2E80 <= o <= 0xA4CF
+            or 0xAC00 <= o <= 0xD7A3 or 0xF900 <= o <= 0xFAFF
+            or 0xFE30 <= o <= 0xFE4F or 0xFF00 <= o <= 0xFF60
+            or 0xFFE0 <= o <= 0xFFE6 or 0x20000 <= o <= 0x2FFFF
+        ):
+            w += 2
+        else:
+            w += 1
+    return w
+
+
+def _clip(s, width):
+    s = _one_line(s)
+    return s if _cwidth(s) <= width else s[: width - 1] + "…"
+
+
+def render_table(rows, headers=("EN", "RU", "Мод"), cap=20, cell_width=60):
+    """Таблица (EN | RU | Мод) через `tabulate`. rows: [(en, ru, name), ...].
+    Возвращает текст таблицы; >cap — первые cap + пометка '(+N ещё)'.
+    """
+    if not rows:
+        return "  (ничего не найдено)"
+    from tabulate import tabulate  # лёгкий, уже в requirements.txt
+    shown = rows[:cap]
+    data = [[_clip(e or "", cell_width), _clip(ru or "", cell_width),
+             _clip(m or "(кэш)", cell_width)] for (e, ru, m) in shown]
+    txt = tabulate(data, headers=list(headers), tablefmt="fancy_grid")
+    if len(rows) > cap:
+        txt += f"\n  (+{len(rows) - cap} ещё — показаны первые {cap})"
+    return txt
+
+
+def _mod_name_for_path(path):
+    """Имя мода из .mod-пути (basename без расширения)."""
+    base = os.path.basename(path or "")
+    return os.path.splitext(base)[0] or base
+
+
+def layer_rows(hits, needle, cap=25):
+    """Из .mod-hits собрать строки таблицы (EN, RU, Мод).
+    Если у мода есть кэш — строки из кэша (EN/RU пары);
+    иначе EN = фрагмент из файла, RU = ''. Dedupe по (EN, RU, mod)."""
+    seen = {}
+    for h in hits:
+        p = h.get("path")
+        if not p:
+            continue
+        name = _mod_name_for_path(p)
+        for en, ru in (h.get("ru_rows") or [((h.get("snippet") or ""), "")]):
+            key = (en, ru, name)
+            seen.setdefault(key, name)
+    rows = list(seen.keys())
+    rows.sort(key=lambda t: (_cwidth(t[0]), _cwidth(t[1]), _cwidth(t[2])))
+    return rows
+
+
 # ---------------------------------------------------------------- search --
 
 def search_all(needle, want_en, want_ru, include_files, include_dll):
@@ -330,35 +394,16 @@ def _iter_hits_in_all_files(files, needle, kind, is_po=False, is_dll=False):
 
 # ---------------------------------------------------------------- main --
 
-def print_hits(label, hits, needle=None, cap=0):
-    """Печать hits .mod-слоя. Если у hit есть 'ru_rows' (перевод строки из кеша),
-    показывает найденный EN-фрагмент и рядом его RU-перевод."""
-    shown = 0
-    for h in hits:
-        path = h["path"]
-        if os.path.normcase(os.path.abspath(path)).startswith(os.path.normcase(os.path.abspath(WORKSHOP)) + os.sep):
-            rel = os.path.relpath(path, WORKSHOP)
-        elif os.path.normcase(os.path.abspath(path)).startswith(os.path.normcase(os.path.abspath(GAME)) + os.sep):
-            rel = os.path.relpath(path, GAME)
-        else:
-            rel = path
-        print(f"  [{label}] {rel}")
-        print(f"     ...{h['snippet']}...")
-        rows = h.get("ru_rows") or []
-        if rows:
-            print(f"     └ перевод этого мода (кэш):")
-            for en, ru in rows[:3]:
-                print(f"        EN: {_one_line(en)}")
-                print(f"        RU: {_one_line(ru)}")
-            if len(rows) > 3:
-                print(f"        (+{len(rows) - 3} ещё строки с этим текстом — показаны первые 3)")
-        shown += 1
-        if cap and shown >= cap:
-            break
-
-
 def norm_ignoring_ws(s):
     return norm(s)
+
+
+def _layer_table(hits, needle, cap=20):
+    """Собирает (EN, RU, Мод) для .mod-слоя и превращает в таблицу."""
+    # Кэш-столбец (если hit'ы уже с ru_rows) берём из него;
+    # если кэша нет — EN=snippet, RU="".
+    rows = layer_rows(hits, needle, cap=cap)
+    return render_table(rows, headers=("EN", "RU", "Мод"), cap=cap)
 
 
 def main():
@@ -391,46 +436,40 @@ def main():
         include_dll=args.dll,
     )
 
-    print(f"\n-- слой 1: кеш (state/) — {len(hits['cache'])} совпадений --")
-    for h in hits["cache"][:n_state_limit]:
-        both = (h.get("en") and h.get("ru") and norm(needle) in norm(h["en"]) and norm(needle) in norm(h["ru"]))
-        mark = "EN+RU" if both else ("EN" if (h.get("en") and norm(needle) in norm(h["en"])) else "RU")
-        print(f"  [КЕШ] {h['mod']}  (row {h['row']} {mark})")
+    rows_cache = []
+    seen_c = set()
+    for h in (hits["cache"] or []):
+        mod = h.get("mod") or "(кэш)"
+        if isinstance(mod, tuple):
+            mod = mod[0] if mod else "(кэш)"
         en = (h.get("en") or "").strip()
         ru = (h.get("ru") or "").strip()
-        if en:
-            print(f"     EN: {_one_line(en)}")
-        if ru:
-            print(f"     RU: {_one_line(ru)}")
-        if not en and not ru:
-            print(f"     ...{h['snippet']}...")
-    if len(hits["cache"]) > n_state_limit:
-        print(f"  ... (+{len(hits['cache']) - n_state_limit} ещё, обрезано для вывода)")
-    if not hits["cache"]:
-        print("  (ничего не найдено)")
+        key = (en, ru, mod)
+        if key in seen_c:
+            continue
+        seen_c.add(key)
+        rows_cache.append((en, ru, mod))
+    if hits["cache"]:
+        print(f"\n-- слой 1: кеш (state/) — {len(hits['cache'])} совпадений --")
+        print(render_table(rows_cache, headers=("EN", "RU", "Мод"), cap=20))
+    else:
+        print(f"\n-- слой 1: кеш (state/) — 0 --")
 
-    NMOD_SHOW = 25  # cap на печать .mod-совпадений (числовой список ниже НЕ обрезается)
     if hits["workshop"]:
         print(f"\n-- слой 2: .mod в Workshop — {len(hits['workshop'])} совпадений --")
-        print_hits("MOD/WS", hits["workshop"], cap=NMOD_SHOW)
-        if len(hits["workshop"]) > NMOD_SHOW:
-            print(f"  ... (+{len(hits['workshop']) - NMOD_SHOW} ещё; все — в списке для перевода ниже)")
+        print(_layer_table(hits["workshop"], needle, cap=20))
     else:
         print(f"\n-- слой 2: .mod в Workshop — 0 --")
 
     if hits["game_data"]:
         print(f"\n-- слой 3: .mod в игре (data/) — {len(hits['game_data'])} совпадений --")
-        print_hits("GAME", hits["game_data"], cap=NMOD_SHOW)
-        if len(hits["game_data"]) > NMOD_SHOW:
-            print(f"  ... (+{len(hits['game_data']) - NMOD_SHOW} ещё; все — в списке для перевода ниже)")
+        print(_layer_table(hits["game_data"], needle, cap=20))
     else:
         print(f"\n-- слой 3: .mod в игре (data/) — 0 --")
 
     if hits["game_mods"]:
         print(f"\n-- слой 4: .mod в игре (mods\\) — {len(hits['game_mods'])} совпадений --")
-        print_hits("GAME/MODS", hits["game_mods"], cap=NMOD_SHOW)
-        if len(hits["game_mods"]) > NMOD_SHOW:
-            print(f"  ... (+{len(hits['game_mods']) - NMOD_SHOW} ещё; все — в списке для перевода ниже)")
+        print(_layer_table(hits["game_mods"], needle, cap=20))
     else:
         print(f"\n-- слой 4: .mod в игре (mods\\) — 0 --")
 
@@ -459,7 +498,12 @@ def main():
     if args.dll:
         if hits["dll"]:
             print(f"\n-- слой 7: .dll — {len(hits['dll'])} совпадений --")
-            print_hits("DLL", hits["dll"])
+            for h in hits["dll"][:20]:
+                rel = os.path.relpath(h["path"], WORKSHOP)
+                print(f"  [DLL/WS] {rel}")
+                print(f"     ...{h['snippet']}...")
+            if len(hits["dll"]) > 20:
+                print(f"  ... (+{len(hits['dll']) - 20} ещё)")
         else:
             print(f"\n-- слой 7: .dll — 0 --")
 

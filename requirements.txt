@@ -1,3 +1,4 @@
 # KenshiModTranslate — Python-зависимости
 # Всё остальное — стандартная библиотека (urllib, json, csv, re, hashlib).
 tqdm>=4.66
+tabulate>=0.9
