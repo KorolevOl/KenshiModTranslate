@@ -205,6 +205,9 @@ def _pool_cache_file(state_dir):
     return os.path.join(state_dir, _POOL_CACHE_SUFFIX) if state_dir else None
 
 
+_global_game_po_paths = []
+_game_po_map_cache = None
+
 def configure(dict_path=None, po_paths=None, state_dir=None):
     """Build (or rebuild) the default reuse pool. Returns the pool.
 
@@ -213,7 +216,8 @@ def configure(dict_path=None, po_paths=None, state_dir=None):
     loads the cache instead of re-reading the whole state/ tree (223+ mods).
     Cache is best-effort — any read/write failure falls through to a fresh build.
     """
-    global _default_pool
+    global _default_pool, _global_game_po_paths
+    _global_game_po_paths = [p for p in (po_paths or []) if p]
     cache_file = _pool_cache_file(state_dir)
     fp = _pool_fingerprint(state_dir, dict_path, po_paths)
     if cache_file and fp and os.path.isfile(cache_file):
@@ -252,11 +256,38 @@ def pool_size():
 
 
 def game_po_map():
-    """{en_lower: ru} for pool entries sourced from the GAME's own .po layer
-    (source == 'game.po'). Used by translate_mods to keep such rows OUT of the
-    cache (mapping.json) and the CSV: the game already renders them in the
-    target language on its own — no translation work to track. dict.json and
-    other-mods rows are NOT included (those stay as before)."""
-    if _default_pool is None:
+    """{en_lower: ru} — ВСЕ EN-строки, у которых есть непустой RU в .по САМОЙ
+    ИГРЫ (локаль <target_lang>). АУТОРИТЕТНЫЙ источник: читает сами .po-файлы
+    игры, а НЕ пул-«source» (пул перекрывает game.po слоем dict.json).
+    Мемоизировано (одна итерация на процесс)."""
+    global _game_po_map_cache
+    if _game_po_map_cache is not None:
+        return _game_po_map_cache
+    if not _global_game_po_paths:
         return {}
-    return {k: ru for k, (ru, src) in _default_pool._map.items() if src == "game.po"}
+    from textutil import parse_po_file
+    out = {}
+    for p in _global_game_po_paths:
+        try:
+            for (en, ru) in parse_po_file(p):
+                if not en:
+                    continue
+                ru_s = str(ru).strip() if ru is not None else ""
+                if not ru_s:
+                    continue
+                if en.lower() == ru_s.lower():
+                    continue   # echo — не реальный перевод
+                out[en.lower()] = ru_s
+        except Exception:
+            continue
+    _game_po_map_cache = out
+    return out
+
+
+def game_po_has(en):
+    """True if EN has a non-empty RU in the GAME's .po (authoritative check,
+    independent of the reuse pool). Cheap memoized per (process) — calls
+    game_po_map() which reads the .po once and caches in _global_game_po_paths."""
+    if not en:
+        return False
+    return en.lower().strip() in game_po_map()

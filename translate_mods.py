@@ -172,14 +172,17 @@ if PRE_FILTER_ENABLED:
     prefilter.configure(DICT_PATH, _PRE_PO_PATHS, STATE)
 
 # ---- GAME-PO SKIP (2026-09-24) -------------------------------------------------
-# Строки, у которых уже есть RU в .по САМОЙ ИГРЫ (локаль target_lang) — игра
-# сама их рендерит по-русски в .mod. Поэтому НЕ пишем такие строки ни в кэш
-# (state/_mapping.json), ни в <имя-мода>.translate.csv (нет работы по
-# переводу — нечего отслеживать). ИСКЛЮЧЕНИЕ: строки из dict.json (канон проекта,
-# напр. CRAFTING->РЕМЕСЛО — наша норма) остаются как есть; здесь только
-# .po-слой игры. Флаг заполняется по i-индексу в reuse-ветке translate_entries
-# и в prefill-ветке --no-llm.
-GAME_SKIP = set()
+# Строки, у которых уже есть непустой RU в .по САМОЙ ИГРЫ (локаль target_lang) —
+# игра сама их рендерит по-русски в .mod, переводить заново бессмысленно.
+# Поэтому НЕ пишем такие строки ни в кэш (state/_mapping.json), ни в
+# <имя-мода>.translate.csv, ни в LLM: «в кэш и CSV — только то, что нужно
+# перевести» (попросил пользователь).
+#
+# АУТОРИТЕТНЫЙ источник = сам файл .po игры (prefilter.game_po_map()), а НЕ
+# «source» пула: пул перекрывает game.po слоем dict.json (напр. CRAFTING),
+# поэтому src=='game.po' CRAFTING пропустил бы, хотя перевод в игре есть.
+# _GP_SET был удалён — используем prefilter.game_po_has(en) напрямую.
+GAME_SKIP = set()    # {str(entry.i)} — строки, не в кэш/CSV/LLM
 
 
 def _in_game_skip(i):
@@ -738,7 +741,9 @@ def translate_entries(entries, done_map, name, ctx, todo_scope=None):
     verify --fix), поэтому фиксер не отправляет их в LLM повторно, даже если
     они попали в drop_ids (там они были «пустыми»; игра показывает по-русски).
     """
-    # --- GAME-PO pre-pass (общий для normal и fix/scope). Только game.po слой.
+    # --- GAME-PO pre-pass (общий для normal и fix/scope). Авторитетный
+    # источник: сами .po-файлы игры (локаль target_lang), не «source» пула
+    # (dict.json маскирует game.po, на что опирается lookup()).
     if PRE_FILTER_ENABLED:
         try:
             _gpm = prefilter.game_po_map()
@@ -765,6 +770,10 @@ def translate_entries(entries, done_map, name, ctx, todo_scope=None):
     if todo_scope is not None:
         scope = {str(i) for i in todo_scope}
         todo = [e for e in entries if str(e["i"]) in scope]
+        # GAME-PO: даже в точечном scope (--lines/--text/verify --fix) строки,
+        # уже локализованные .по игры, НЕ идут в LLM — игра отрисует сама;
+        # их RU подставлен pre-pass'ом выше, они будут в done_map (и вне кэша/CSV).
+        todo = [e for e in todo if str(e["i"]) not in GAME_SKIP]
     # 2026-09-19: оставляем ТОЛЬКО строки, которым по единому классификатору
     # НУЖЕН перевод (empty/echo/latin/ph_lost/mixed при пустом RU). Пустые
     # onomatopoeia/entry-ID/already_ru ЛЛМ НЕ переведёт (rightfully) — раньше
@@ -809,11 +818,13 @@ def translate_entries(entries, done_map, name, ctx, todo_scope=None):
                 n_reused += 1
                 # apply_dict: если en в exact — берём канон RU; иначе подставляем как есть
                 done_map[str(e["i"])] = apply_dict(en, ru)
-                # GAME-PO SKIP: если RU пришёл из .po ИГРЫ — игра сама рендерит
-                # строку в target_lang. НЕ пишем такую строку в кэш/маппинг (и
-                # export_mod_csv её опустит), чтобы дельта была минимальной.
-                if src == "game.po":
-                    GAME_SKIP.add(str(e["i"]))
+                # GAME-PO SKIP: авторитетная проверка — есть EN в .po ИГРЫ?
+                # (пул 'source' ненадёжен: dict.json маскирует game.po)
+                try:
+                    if prefilter.game_po_has(en):
+                        GAME_SKIP.add(str(e["i"]))
+                except Exception:
+                    pass
                 continue
             keep.append(e)
         todo = keep
@@ -1256,12 +1267,19 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
                 ru, _src = prefilter.lookup(en)
                 if ru and str(ru).strip() and str(ru).strip().lower() != en.strip().lower():
                     done[str(e["i"])] = str(ru)
-                    if _src == "game.po":
-                        GAME_SKIP.add(str(e["i"]))
+                    # GAME-PO: авторитетная проверка — есть EN в .po ИГРЫ?
+                    # (пул 'source' ненадёжен: dict.json маскирует game.po)
+                    try:
+                        if prefilter.game_po_has(en):
+                            GAME_SKIP.add(str(e["i"]))
+                    except Exception:
+                        pass
                     reused += 1
             if reused:
                 log(f"  [no-llm] prefill из локальных источников: {reused} строк")
         filled = sum(1 for v in done.values() if v and str(v).strip())
+        filled_real = sum(1 for i, v in done.items()
+                          if v and str(v).strip() and not _in_game_skip(i))
         # 2026-09-23 fix: --no-llm prefill должен сохраняться в кэш (mapping.json),
         # иначе csv_mod.py export/import не сможет восстановить перевод.
         # Применяем тот же has_real_translation, что и LLM-ветка, чтобы в кэш
@@ -1277,9 +1295,11 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
                 + (f" ({len(GAME_SKIP)} строк игры не в кэш — локализует сама игра)" if GAME_SKIP else ""))
         try:
             export_mod_csv(target, entries, done)
+            _gp = len(GAME_SKIP)
             log(f"  [no-llm] CSV готов: {os.path.basename(target)[:-4]}.translate.csv "
-                f"({filled}/{len(entries)} заполнено из кеша — остальное пусто, переведи сам; "
-                f"системные строки в CSV не вошли)")
+                f"({filled_real}/{len(entries)} реал. перевода из кеша"
+                + (f"; {_gp} строк игры НЕ в CSV/кэш (локал. сама игра)" if _gp else "")
+                + " — остальное пусто, переведи сам)")
             log(f"  [no-llm] после правки: assemble_mod.bat \"{name}\"")
         except Exception as ex:
             log(f"  [no-llm/csv] не смог записать: {ex}")
@@ -1298,22 +1318,23 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
     filled = sum(1 for v in done.values() if v)
     unfilled = len(entries) - filled
     log(f"  coverage: {filled}/{len(entries)}" + (f"  ({unfilled} пропущено)" if unfilled else ""))
+    # GAME-PO-ВСЕ (2026-09-24): если ВСЕ строки в этом моде уже локализованы .по
+    # игры (нет ни одной строки, которую НАДО переводить) — это законный финал:
+    # кэш оставляем пустым, .mod не трогаем, CSV-экспорт (без game-po строк).
+    # Сработает независимо от filled: game-po строки в done (имеют RU из пула),
+    # но вычищены из _kept → _kept пуст → без этого early-return apply дёрнет
+    # пустой мейппинг и «нет кириллицы» → ложный ABORT.
+    if entries and all(_in_game_skip(str(e.get("i"))) for e in entries):
+        os.makedirs(STATE, exist_ok=True)
+        json.dump([], open(mfile, "w", encoding="utf-8"), ensure_ascii=False)
+        log(f"  [game-po] все {len(entries)} строк уже в .по игры (локаль {TARGET_LANG}) — "
+            f"в кэш/CSV/LLM не записываю, игра отрисует сама. [OK]")
+        try:
+            export_mod_csv(target, entries, done)
+        except Exception:
+            pass
+        return True
     if filled == 0:
-        # 2026-09-24: ВСЁ в этом моде уже локализовано .по игры (строки в
-        # GAME_SKIP) — законный финал «игра отрисует сама»: кэш пустой,
-        # .mod не трогаем, CSV-экспорт (без game-po-строк).
-        if filled == 0 and any(_in_game_skip(str(e.get("i"))) for e in entries):
-            _need_n = [str(e.get("i")) for e in entries if not _in_game_skip(e.get("i"))]
-            if not _need_n:
-                os.makedirs(STATE, exist_ok=True)
-                json.dump([], open(mfile, "w", encoding="utf-8"), ensure_ascii=False)
-                log(f"  [game-po] все {len(entries)} строк уже в .по игры (локаль {TARGET_LANG}) — "
-                    f"в кэш/CSV/LLM не записываю, игра отрисует сама. [OK]")
-                try:
-                    export_mod_csv(target, entries, done)
-                except Exception:
-                    pass
-                return True
         log("  [!] ничего не переведено - НЕ применяю (оригинальный .mod не тронут)")
         return False
     # --- финальный аудит (без LLM): есть ли РЕАЛЬНО валидные переводы? ---
