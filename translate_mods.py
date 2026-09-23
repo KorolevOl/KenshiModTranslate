@@ -267,19 +267,23 @@ def dict_block_for_prompt():
 
 def apply_dict(en_original, ru_translated):
     """Post-fix: enforce dictionary so UI keys/categories stay consistent.
-    1) exact: whole EN string is a dictionary key -> return its RU (guaranteed match).
-    2) words: EN word present in RU string left untranslated -> replace by term RU.
+    Source = DICT["exact"] (единый источник канона; words ⊆ exact убраны
+    дубликатом 2026-09-23 — все 113 слов были уже в exact с теми же значениями).
+    1) exact: целая EN-строка = ключу -> вернуть каноническое RU (guaranteed).
+    2) word-boundary: ключ (термин или целая фраза) ВНУТРИ EN-строки -> если
+       LLM оставила EN-фразу в переводе, подставить канон (safety-net).
+       Regex срабатывает ТОЛЬКО если EN-литерал присутствует в RU-строке.
     """
     low = en_original.strip().lower()
     if low in DICT["exact"]:
         return DICT["exact"][low]
     out = ru_translated
-    for en, ru in DICT["words"].items():
+    for en, ru in DICT["exact"].items():
         if not en:
             continue
-        # word-boundary replacement, case-insensitive (covers "Smithing", "smithing", "Smithing,")
-        # (?![a-z']) — НЕ подхватить внутри слова (приставка, апостроф-множественное)
-        # (?![A-Za-z]) — не подхватить внутри бОльшего EN-токена (Fishmen ≠ Fishman)
+        # word-boundary, case-insensitive. (?![A-Za-z]) — не внутри бОльшего
+        # EN-токена (Fishmen ≠ Fishman), (?<![A-Za-z]) — не сохранный хвост.
+        # Для многословных фраз — точная подстрока с boundary по краям.
         pat = re.compile(r"(?<![A-Za-z])" + re.escape(en) + r"(?![A-Za-z])", re.IGNORECASE)
         out = pat.sub(ru, out)
     return out
