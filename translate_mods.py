@@ -140,15 +140,20 @@ SYS_PROMPT, USER_PROMPT_TMPL = load_prompt()
 DICT_PATH  = T.get("dict", "dict.json")
 if not os.path.isabs(DICT_PATH):
     DICT_PATH = os.path.join(HERE, DICT_PATH)
-DICT = {"exact": {}, "words": {}}
+DICT = {"exact": {}, "words": set()}
 if os.path.isfile(DICT_PATH):
     d = json.load(open(DICT_PATH, encoding="utf-8-sig"))
     DICT["exact"] = {k.lower().strip(): v for k, v in (d.get("exact") or {}).items()}
-    # words = {en: ru} — словари «безопасных» (многословных или >=8 симв.),
-    # которые МОЖНО подставлять word-boundary внутри длинной фразы.
-    # Короткие ambiguous (food/power/human) — только в exact (full-match).
-    # Значения В words ДОЛЖНЫ быть идентичны exact (иначе exact побеждает).
-    DICT["words"] = {k.lower().strip(): v for k, v in (d.get("words") or {}).items()}
+    # words — WHITELIST названий (без значений): термины, безвредные для
+    # подстановки word-boundary ВНУТРИ строки. Значения всегда берутся из exact
+    # (words ⊆ exact; дубли значений исключены).
+    # Поддерживаем оба формата файла: список имён (новый) и dict {en: ru} (старый,
+    # значения игнорируются — источник один: exact).
+    raw = d.get("words")
+    if isinstance(raw, dict):
+        DICT["words"] = {k.lower().strip() for k in raw}
+    elif isinstance(raw, list):
+        DICT["words"] = {w.lower().strip() for w in raw if isinstance(w, str)}
 
 # ---- Pre-LLM filter (СЛОЙ 1 regex + СЛОЙ 2 reuse) ----
 # СЛОЙ 2: пул готовых EN->RU переводов — dict.json exact (канон) > .po игры >
@@ -249,14 +254,13 @@ PROGRESS = {"progress": None}
 
 # ---------------- dictionary ----------------
 def dict_block_for_prompt():
-    """Словарь в промпте: ОБЪЕДИНЕНИЕ exact ∪ words, каждый ключ — ОДИН раз
-    (раньше два блока дублировали 113 общих записей — мёртвый груз контекста).
-    Since words ⊆ exact with identical values, the union == exact (153 lines,
-    previously 266 lines of which 113 were duplicates). Both formats of the
-    words file (dict {en:ru} and name list) are supported."""
+    """Словарь в промпте: ОБЪЕДИНЕНИЕ exact ∪ words, каждый ключ — ОДИН раз.
+    words ⊆ exact (whitelist имён), поэтому union == exact: 153 строки,
+    без повторов (было 266). Значения — всегда из exact (единый источник)."""
     merged = {}
-    for en, ru in (DICT.get("words") or {}).items():
-        merged[en.lower().strip()] = ru
+    for en in DICT["words"]:
+        if en in DICT["exact"]:
+            merged[en] = DICT["exact"][en]
     for en, ru in (DICT.get("exact") or {}).items():
         merged[en.lower().strip()] = ru
     if not merged:
