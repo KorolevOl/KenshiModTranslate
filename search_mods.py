@@ -398,12 +398,48 @@ def norm_ignoring_ws(s):
     return norm(s)
 
 
-def _layer_table(hits, needle, cap=20):
-    """Собирает (EN, RU, Мод) для .mod-слоя и превращает в таблицу."""
-    # Кэш-столбец (если hit'ы уже с ru_rows) берём из него;
-    # если кэша нет — EN=snippet, RU="".
-    rows = layer_rows(hits, needle, cap=cap)
-    return render_table(rows, headers=("EN", "RU", "Мод"), cap=cap)
+def cache_rows(hits):
+    """(EN, RU, Мод) из кэш-слоя, дедуп + сортировка."""
+    out, seen = [], set()
+    for h in hits:
+        mod = h.get("mod") or "(кэш)"
+        if isinstance(mod, tuple):
+            mod = mod[0] if mod else "(кэш)"
+        en = (h.get("en") or "").strip()
+        ru = (h.get("ru") or "").strip()
+        key = (en, ru, mod)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((en, ru, mod))
+    out.sort(key=lambda t: (_cwidth(t[0]), _cwidth(t[1]), _cwidth(t[2])))
+    return out
+
+
+def _print_layer(title, n_hits, rows, show_all=False, cap=20):
+    """Една печать для слоя: таблица EN|RU|Мод.
+    show_all=False (дефолт) — скрывает строки с непустым RU (уже переведено)
+    + пометка '(скрыто N — --all, чтобы показать)'.
+    show_all=True — все строки."""
+    if not rows:
+        print(f"\n-- {title} — {n_hits} совпадений --")
+        if n_hits:
+            print("  (все совпадения уже переведены — --all, чтобы показать)")
+        else:
+            print("  (ничего не найдено)")
+        return
+    if show_all:
+        shown, n_hidden = rows, 0
+    else:
+        shown = [(e, r, m) for (e, r, m) in rows if not (r and r.strip())]
+        n_hidden = len(rows) - len(shown)
+    print(f"\n-- {title} — {n_hits} совпадений --")
+    if not shown:
+        print(f"  (все {n_hidden} совпадений уже переведены — --all, чтобы показать)")
+    else:
+        print(render_table(shown, headers=("EN", "RU", "Мод"), cap=cap))
+        if n_hidden:
+            print(f"  (скрыто {n_hidden} уже перевед. строк — --all, чтобы показать)")
 
 
 def main():
@@ -416,8 +452,11 @@ def main():
     ap.add_argument("--no-translate", action="store_true", help="не предлагать запустить перевод")
     ap.add_argument("--yes", action="store_true", help="авто-'все' (запустить перевод без ввода)")
     ap.add_argument("--force", action="store_true", help="пере-перевести всё заново (передаётся через --force)")
+    ap.add_argument("--all", action="store_true", help="показывать ВСЕ совпадения, включая уже переведённые (по умолчанию они скрыты)")
+    ap.add_argument("--cap", type=int, default=20, help="сколько строк печатать в таблице (default: 20)")
     args = ap.parse_args()
     needle = args.phrase
+    cap = max(1, args.cap)
 
     want_en = True if args.en else (False if args.ru else True)
     want_ru = True if args.ru else (False if args.en else True)
@@ -428,7 +467,6 @@ def main():
     print(f"workshop = {WORKSHOP}")
     print(f"game     = {GAME}")
 
-    n_state_limit = 30  # cap on cache hits printed (state can have thousands)
     hits = search_all(
         needle=needle,
         want_en=want_en, want_ru=want_ru,
@@ -436,42 +474,14 @@ def main():
         include_dll=args.dll,
     )
 
-    rows_cache = []
-    seen_c = set()
-    for h in (hits["cache"] or []):
-        mod = h.get("mod") or "(кэш)"
-        if isinstance(mod, tuple):
-            mod = mod[0] if mod else "(кэш)"
-        en = (h.get("en") or "").strip()
-        ru = (h.get("ru") or "").strip()
-        key = (en, ru, mod)
-        if key in seen_c:
-            continue
-        seen_c.add(key)
-        rows_cache.append((en, ru, mod))
-    if hits["cache"]:
-        print(f"\n-- слой 1: кеш (state/) — {len(hits['cache'])} совпадений --")
-        print(render_table(rows_cache, headers=("EN", "RU", "Мод"), cap=20))
-    else:
-        print(f"\n-- слой 1: кеш (state/) — 0 --")
-
-    if hits["workshop"]:
-        print(f"\n-- слой 2: .mod в Workshop — {len(hits['workshop'])} совпадений --")
-        print(_layer_table(hits["workshop"], needle, cap=20))
-    else:
-        print(f"\n-- слой 2: .mod в Workshop — 0 --")
-
-    if hits["game_data"]:
-        print(f"\n-- слой 3: .mod в игре (data/) — {len(hits['game_data'])} совпадений --")
-        print(_layer_table(hits["game_data"], needle, cap=20))
-    else:
-        print(f"\n-- слой 3: .mod в игре (data/) — 0 --")
-
-    if hits["game_mods"]:
-        print(f"\n-- слой 4: .mod в игре (mods\\) — {len(hits['game_mods'])} совпадений --")
-        print(_layer_table(hits["game_mods"], needle, cap=20))
-    else:
-        print(f"\n-- слой 4: .mod в игре (mods\\) — 0 --")
+    _print_layer("слой 1: кеш (state/)", len(hits["cache"]),
+                 cache_rows(hits["cache"]), show_all=args.all, cap=cap)
+    for key, label in (("workshop", "слой 2: .mod в Workshop"),
+                       ("game_data", "слой 3: .mod в игре (data/)"),
+                       ("game_mods", "слой 4: .mod в игре (mods\\)")):
+        _print_layer(label, len(hits[key]),
+                     layer_rows(hits[key], needle),
+                     show_all=args.all, cap=cap)
 
     if hits["po"]:
         print(f"\n-- слой 5: .po RU-локализация — {len(hits['po'])} совпадений --")
