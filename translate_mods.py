@@ -1294,15 +1294,18 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
             for old in (out_mod, vjson):
                 if os.path.exists(old):
                     os.remove(old)
-            # 2026-09-24 FIX keepOnly: substring мода не находит записи, когда внутреннее
-            # имя-namespace ≠ видимое имя (Great Beak Things: ns "High Beak Things.mod" +
-            # "rebirth.mod") → оверлей выходил ПУСТЫМ (только description).
-            # Теперь: ТОЧНЫЙ список StringId записей, у которых есть RU (key вида
-            # record<id>_<field> → id). Если RU-строк нет — старый substring-fallback.
+            # 2026-09-24 FIX keepOnly v2: список ТОЛЬКО из RU-кэша (mapping), НЕ из done —
+            # done содержит game-po строки (RU берём из .по игры, в кэш/CSV они НЕ идут),
+            # и они утекали в оверлей как EN-записи (15 вместо 8). Правило: game-po строки
+            # НЕ в .mod — игра их локализует сама. Теперь: терминал N == CSV N == RUS-мод N.
+            try:
+                _keepmap = {str(r.get("i")): r.get("ru") for r in json.load(open(mfile, encoding="utf-8")) if r.get("ru")}
+            except Exception:
+                _keepmap = {}
             _kept_ids, _seen_ids = [], set()
             for _e in entries:
                 _i = str(_e.get("i"))
-                if _i not in done or not done.get(_i):
+                if _i not in _keepmap:
                     continue
                 _k = _e.get("key") or ""
                 if _k.startswith("record") and "_" in _k[6:]:
@@ -1311,8 +1314,9 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
                         _seen_ids.add(_id)
                         _kept_ids.append(_id)
             keep_only_arg = json.dumps(_kept_ids) if _kept_ids else modbase
-            log(f"  [overlay] keepOnly: {len(_kept_ids)} точных record-id "
-                + ("" if _kept_ids else "(нет RU-записей — fallback на имя мода)"))
+            log(f"  [overlay] keepOnly: {len(_kept_ids)} record-id из RU-кэша "
+                + ("" if _kept_ids else "(RU-строк нет — fallback на имя мода)")
+                + f"  [цель: N терминала == N CSV == N RUS-мода]")
             run_dotnet(["apply", target, mfile, out_mod, keep_only_arg])
             rc_v, vlog = ov.run_cli(["extract", out_mod, vjson])
             if rc_v != 0:
