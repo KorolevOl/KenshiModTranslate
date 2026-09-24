@@ -17,12 +17,18 @@
   • .translate.csv / .prev / state-кеш НЕ трогаем (для повторного перевода)
 
 Возврат: 0 = ок/пропуск, 1 = ошибка, 2 = арг.ошибка, 3 = нет мода/бэкапа.
+ПОЛНАЯ ОЧИСТКА (2026-09-24):
+  python revert_mods.py --full-clean              # revert ВСЕХ модов + RUS-оверлеи +
+                                                  # CSV (новый+legacy) + state/ — всё
+  python revert_mods.py --full-clean --dry-run    # показать, что будет удалено/перенесено
+  python revert_mods.py --full-clean --yes        # без подтверждения (batch)
 Проверка:
   python revert_mods.py --list                 # что можно откатить
   python revert_mods.py --dry-run <мод>         # показать, не трогая
   python revert_mods.py <мод>                   # откатить
   python revert_mods.py --list-file список.txt   # по списку
-  python revert_mods.py                        # все (y/N)
+  python revert_mods.py --full-clean             # полная очистка (все моды+кэш+csv+оверлеи)
+  python revert_mods.py                          # все (y/N)
 """
 import os
 import sys
@@ -183,11 +189,191 @@ def clean_orphans(mods, dry_run=False):
     return moved, trash_root
 
 
+def full_clean(dry_run=False, assume_yes=False):
+    """--full-clean: ПОЛНАЯ ОЧИСТКА — «чистый стол» перед новым переводом.
+
+    Делает ВСЁ, что накопилось при переводе, одним движением:
+      A) revert всех модов, у которых есть EN-бэкап (в-place .mod → оригинал);
+      B) все RUS-оверлеи в kenshi\\mods\\<имя> RUS — выключить из
+         data\\__mods.list И data\\mods.cfg, каталоги перенести в единый
+         контейнер kenshi\\_kmt_full_clean_<ts> (обратимо, НЕ mdel);
+      C) все CSV нового формата <мод>.translate.csv (workshop + кenshi);
+      D) все legacy CSV translate.csv (стараго формата, б/ имени мода);
+      E) state/ — ВСЁ (кэш _entries/_mapping/_reuse_pool/_untranslated —
+         чтобы старые легаси-записи не попали в новый перевод через resume).
+
+    Возврат: контейнер + .fullclean_<ts>.bak на registry-файлах.
+    """
+    import kmt_paths as kp
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    GAME = kp.resolve(CFG["paths"]["game"])
+    MODS_DIR = os.path.join(GAME, "mods")
+    GAME_LIST = os.path.join(GAME, "data", "__mods.list")
+    MODS_CFG = os.path.join(GAME, "data", "mods.cfg")
+    container = os.path.join(GAME, "_kmt_full_clean_" + ts)
+
+    n_revert = n_overlay = n_csv = n_state = 0
+    removed_csv, removed_state, moved_overlays = [], [], []
+
+    # ---------- A) revert модов (EN original из бэкапа) ----------
+    all_mods = list(TM.workshop_mods()) + list(getattr(TM, "game_mods", lambda: [])())
+    for m in all_mods:
+        tgt = m.get("modfile")
+        if not tgt or not os.path.isfile(tgt):
+            continue
+        bak = find_backup(tgt)
+        if not bak:
+            continue
+        if _md5(tgt) == _md5(bak):
+            continue  # уже оригинал
+        if dry_run:
+            print(f"  [dry-run] revert: {tgt}")
+            n_revert += 1
+            continue
+        status, detail = revert_one(tgt)
+        n_revert += 1
+        print(f"  [{'OK ' if status == 'ok' else 'ERR'}] revert: {os.path.basename(tgt)} — {detail}")
+
+    # ---------- B) RUS-оверлеи: registry + каталоги ----------
+    rus_dirs = []
+    if os.path.isdir(MODS_DIR):
+        rus_dirs = [d for d in sorted(os.listdir(MODS_DIR))
+                    if d.lower().rstrip().endswith(" rus")
+                    and os.path.isdir(os.path.join(MODS_DIR, d))]
+    if not rus_dirs:
+        print("  оверлеев RUS не найдено (B) — пропускаю")
+    else:
+        # --- B.1 __mods.list ---
+        list_lines = []
+        if os.path.isfile(GAME_LIST):
+            with open(GAME_LIST, "r", encoding="utf-8-sig") as f:
+                list_lines = [l.rstrip("\r\n") for l in f]
+        keep = [l for l in list_lines
+                if not any(l.strip().lower() in (d.lower(), d.lower() + ".mod") for d in rus_dirs)]
+        dropped_list = len(list_lines) - len(keep)
+        if os.path.isfile(GAME_LIST) and dropped_list and not dry_run:
+            with open(GAME_LIST + f".fullclean_{ts}.bak", "w", encoding="utf-8") as f:
+                f.write("\n".join(list_lines) + "\n")
+            with open(GAME_LIST, "w", encoding="utf-8") as f:
+                f.write("\n".join(keep) + "\n")
+        print(f"  [B.1] __mods.list: {dropped_list} строк ' RUS' "
+              + ("would be removed" if dry_run else "удалено (бэкап рядом)"))
+        # --- B.2 mods.cfg ---
+        cfg_lines = []
+        if os.path.isfile(MODS_CFG):
+            with open(MODS_CFG, "r", encoding="utf-8-sig") as f:
+                cfg_lines = [l.rstrip("\r\n") for l in f]
+        def _cfg_dropped(line):
+            s = line.strip().lower()
+            if not s:
+                return False
+            for d in rus_dirs:
+                if s == d.lower() or s == d.lower() + ".mod":
+                    return True
+            return False
+        cfg_keep = [l for l in cfg_lines if not _cfg_dropped(l)]
+        dropped_cfg = len(cfg_lines) - len(cfg_keep)
+        if os.path.isfile(MODS_CFG) and dropped_cfg and not dry_run:
+            with open(MODS_CFG + f".fullclean_{ts}.bak", "w", encoding="utf-8") as f:
+                f.write("\n".join(cfg_lines) + "\n")
+            with open(MODS_CFG, "w", encoding="utf-8") as f:
+                f.write("\n".join(cfg_keep) + "\n")
+        print(f"  [B.2] mods.cfg: {dropped_cfg} строк ' RUS' "
+              + ("would be removed" if dry_run else "удалено (бэкап рядом)"))
+        # --- B.3 каталоги → контейнер ---
+        for d in rus_dirs:
+            src = os.path.join(MODS_DIR, d)
+            if dry_run:
+                print(f"  [dry-run] overlay: {d} → {os.path.basename(container)}")
+            else:
+                os.makedirs(container, exist_ok=True)
+                dst = os.path.join(container, d)
+                if os.path.exists(dst):
+                    dst = dst + f"_{int(datetime.datetime.now().timestamp())}"
+                shutil.move(src, dst)
+                print(f"  [MOVED] overlay: {d} → {os.path.basename(container)}")
+            moved_overlays.append(d)
+            n_overlay += 1
+
+    # ---------- C+D) CSV (новый + legacy без имени) ----------
+    search_roots = [os.path.dirname(WORKSHOP), GAME]  # workshop + kenshi
+    csv_removed = []
+    for root in search_roots:
+        if not os.path.isdir(root):
+            continue
+        for dirpath, dirs, files in os.walk(root):
+            # не залезаем в контейнер и бэкап-папки
+            if container in dirpath:
+                continue
+            for fn in files:
+                fl = fn.lower()
+                if fn.lower() == "translate.csv" or fl.endswith(".translate.csv"):
+                    p = os.path.join(dirpath, fn)
+                    if any(p.startswith(b) for b in (container,)):
+                        continue
+                    csv_removed.append(p)
+    for p in csv_removed:
+        if not dry_run:
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        print(("  [dry-run] " if dry_run else "  [CSV] ") + p)
+    n_csv = len(csv_removed)
+
+    # ---------- E) state/ — wipe ----------
+    state_removed = []
+    if os.path.isdir(STATE):
+        for fn in sorted(os.listdir(STATE)):
+            p = os.path.join(STATE, fn)
+            state_removed.append(p)
+            if not dry_run:
+                try:
+                    if os.path.isdir(p):
+                        shutil.rmtree(p, ignore_errors=True)
+                    else:
+                        os.remove(p)
+                except OSError:
+                    pass
+    n_state = len(state_removed)
+    if state_removed:
+        print(f"  [{'dry-run ' if dry_run else ''}]state: {n_state} файлов "
+              + ("would be deleted" if dry_run else "удалено (весь кэш)"))
+        for p in (state_removed[:8] if state_removed and not dry_run else []):
+            print(f"    → {p}")
+        if len(state_removed) > 8:
+            print(f"    …(+{len(state_removed)-8})")
+
+    print(f"\n=== FULL-CLEAN {'DRY-RUN' if dry_run else 'DONE'} ===")
+    print(f"  revert:   {n_revert} мод(ов)")
+    print(f"  overlay:  {n_overlay} (контейнер: {os.path.basename(container)})")
+    print(f"  csv:      {n_csv} (новый+legacy)")
+    print(f"  state:    {n_state} файло")
+    if not dry_run and (n_overlay or n_csv or n_state):
+        print(f"  бэкапы: registry .fullclean_{ts}.bak рядом с __mods.list/mods.cfg;")
+        print(f"          оверлеи в {container}")
+    return 0
+
+
 def main():
     args = [a for a in sys.argv[1:] if a]
     dry_run = "--dry-run" in args
     clean = "--clean" in args
-    args = [a for a in args if a not in ("--dry-run", "--list", "--clean")]
+    full = "--full-clean" in args
+    assume_yes = "--yes" in args or os.environ.get("KENSHI_YES") == "1"
+    args = [a for a in args if a not in ("--dry-run", "--list", "--clean", "--full-clean", "--yes")]
+
+    if full:
+        if not dry_run and not assume_yes:
+            try:
+                ans = input("ПОЛНАЯ очистка: revert всех модов + удалить все RUS-оверлеи/"
+                            "CSV/кэш? (нельзя отключить по-очереди) [y/N]: ").strip().lower()
+            except EOFError:
+                ans = "n"
+            if ans not in ("y", "yes", "д", "да"):
+                print("прервано (ничего не изменено)")
+                return 1
+        return full_clean(dry_run=dry_run, assume_yes=assume_yes)
 
     # --clean-orphans: перенести orphan-папки (без .mod) в trash (обратимо)
     if "--clean-orphans" in sys.argv:

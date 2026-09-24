@@ -12,6 +12,14 @@ rem    revert_mods.bat --file <path>                  revert any .mod (kenshi\da
 rem    revert_mods.bat --clean <mod> | all            also delete the mod's state cache + its *.translate.csv
 rem    revert_mods.bat --clean-orphans --dry-run      show orphan (deleted .mod) folders
 rem    revert_mods.bat --clean-orphans                move orphan folders to _kmt_orphan_trash
+rem  FULL CLEAN (2026-09-24) - "chistoi stol" before re-translate:
+rem    revert_mods.bat --full-clean               revert ALL mods + unhook+move ALL " RUS"
+rem                                               overlays + delete ALL *.translate.csv
+rem                                               (new) + translate.csv (legacy) + wipe STATE/
+rem    revert_mods.bat --full-clean --dry-run     show what WOULD be removed/moved, touch nothing
+rem    revert_mods.bat --full-clean --yes         skip the y/N prompt (for batch)
+rem  (overlays are MOVED to kenshi\_kmt_full_clean_<ts>\; registry gets
+rem   .fullclean_<ts>.bak next to __mods.list / mods.cfg)
 rem ============================================================
 python "%~dp0revert_mods.py" %*
 set RC=%ERRORLEVEL%
