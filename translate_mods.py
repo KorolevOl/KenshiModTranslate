@@ -101,6 +101,17 @@ RETRIES    = int(T.get("http_retries", 3))
 FORCE      = bool(T.get("force_retranslate", False)) or "--force" in sys.argv
 NO_CACHE   = os.environ.get("KENSHI_NO_CACHE") == "1"
 NO_LLM     = bool(T.get("no_llm", False)) or "--no-llm" in sys.argv  # 2026-09-21: только CSV, без LLM
+# 2026-09-24 (НОВЫЙ АЛГОРИТМ, проверен в игре на Medieval_Crossbows): перевод
+# НЕ пишется прямо в .mod Workshop (Steam-обновление автора это затирает),
+# а собирается в ОТДЕЛЬНЫЙ RU-оверлей kenshi\\mods\\<Имя> RUS\\<Имя> RUS.mod
+# (CLI apply с 4-м arg keepOnly: только собственные записи мода, без чужих).
+# Строка оверлея вставляется в data\\__mods.list СРАЗУ ПОСЛЕ оригинала
+# (поздний в списке wins по object-ID), игра сама ключит его. EN-.mod не трогается.
+# --overlay   — явно ВКЛ (default)
+# --no-overlay — только кэш+CSV, оверлей не строим (ручной/частичный режим)
+# --in-place  — старое поведение: apply прямо в .mod (встроенные kenshi\\data + экзотика)
+INPLACE  = "--in-place" in sys.argv or bool(T.get("inplace", False))
+NO_OVERLAY = "--no-overlay" in sys.argv
 # 2026-09-23: точечный перевод — только выбранные строки, без полного пере-перевода.
 # --lines "1,5-10,42" — номера строк в .translate.csv (1-based, как в Excel)
 # --text "фраза" (можно несколько) — частичное совпадение в "original", регистр не учитывается
@@ -1374,15 +1385,74 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
         log(f"  [кэш] {len(_kept)} реал. переводов в кэш; {_dropped_n} строк (системные/пустые/эхо) вынесены из кэша и CSV")
     CUR["mapref"] = None
     if PR is not None: PR.busy("apply .mod…")
-    run_dotnet(["apply", target, mfile, target + ".new"])
-    if PR is not None: PR.idle()
-    newb = open(target + ".new", "rb").read().decode("utf-8", "ignore")
-    if not any("\u0400" <= c <= "\u04ff" for c in newb):
-        os.remove(target + ".new")
-        log("  [ABORT] apply не дал кириллицы - оригинальный .mod не тронут")
-        return False
-    os.replace(target + ".new", target)
-    log(f"  [OK] RU-мод записан: {target}")
+    if INPLACE or (m.get("kind") == "game" and m.get("gk") == "data"):
+        # 2026-09-24 (legacy path): apply прямо в .mod — только встроенные kenshi\\data
+        # или явный --in-place. Для Workshop-модов — см. overlay-ветку ниже.
+        run_dotnet(["apply", target, mfile, target + ".new"])
+        if PR is not None: PR.idle()
+        newb = open(target + ".new", "rb").read().decode("utf-8", "ignore")
+        if not any("\u0400" <= c <= "\u04ff" for c in newb):
+            os.remove(target + ".new")
+            log("  [ABORT] apply не дал кириллицы - оригинальный .mod не тронут")
+            return False
+        os.replace(target + ".new", target)
+        log(f"  [OK] RU-мод записан: {target}")
+    else:
+        # 2026-09-24 (НОВЫЙ АЛГОРИТМ): отдельный RU-оверлей, исходный EN-.mod не тронут.
+        if NO_OVERLAY:
+            log("  [skip] --no-overlay: кэш+CSV записаны, оверлей не строю")
+        else:
+            import overlay as ov
+            ru_name = m["name"] + " RUS"
+            work = os.path.join(r"T:", ".overlay_%s" % m["name"])
+            out_mod = os.path.join(work, ru_name + ".mod")
+            vjson = os.path.join(work, "v.json")
+            os.makedirs(work, exist_ok=True)
+            for old in (out_mod, vjson):
+                if os.path.exists(old):
+                    os.remove(old)
+            run_dotnet(["apply", target, mfile, out_mod, m["name"]])  # keepOnly: только свои записи
+            rc_v = ov.run_cli(["extract", out_mod, vjson])
+            if rc_v != 0:
+                log("  [WARN] verify extract не прошёл — оверлей всё равно ставлю (цифры ниже)")
+            else:
+                v = json.load(open(vjson, encoding="utf-8"))
+                own = [e for e in v if m["name"].lower() in (e.get("key") or "").lower()]
+                cyr = [e for e in own if re.search(r"[\u0400-\u04ff]", e.get("original") or "")]
+                log(f"  [overlay] round-trip check: записей {len(v)}, своих объектов {len(own)}, с кириллицей {len(cyr)}")
+                if not cyr:
+                    log(f"  [ABORT] оверлей без кириллицы — не устанавливаю (EN .mod не тронут)")
+                    return False
+            # установка: kenshi\\mods\\<Имя> RUS\\<Имя> RUS.mod (эталонный паттерн)
+            tgt_dir = os.path.join(MODS_DIR, ru_name)
+            if os.path.isdir(tgt_dir):
+                ovbak = os.path.join(r"T:", ".old_%s_%s" % (m["name"], datetime.datetime.now().strftime("%Y%m%d_%H%M%S")))
+                os.makedirs(os.path.dirname(ovbak), exist_ok=True)
+                shutil.rmtree(ovbak, ignore_errors=True)
+                shutil.move(tgt_dir, ovbak)
+            os.makedirs(tgt_dir, exist_ok=True)
+            tgt = os.path.join(tgt_dir, ru_name + ".mod")
+            shutil.copy2(out_mod, tgt)
+            log(f"  [overlay] установлен: {tgt} ({os.path.getsize(tgt)} B) — EN .mod НЕ тронут")
+            # __mods.list: бэкап + строка оверлея СРАЗУ ПОСЛЕ оригинала (wins по object-ID)
+            lines = ov.read_lines()
+            if ru_name not in [l.strip() for l in lines]:
+                bak = ov.backup_list("install")
+                out, done = [], False
+                for l in lines:
+                    out.append(l)
+                    if not done and l.strip() == m["name"]:
+                        out.append(ru_name); done = True
+                if not done:
+                    log(f"  [overlay] ВНИМАНИЕ: строка оригинала '{m['name']}' не найдена в __mods.list — "
+                        f"строка будет удалена при валидации игры (нужен точный Workshop-заголовок). "
+                        f"Проверить в launcher и дописать вручную ПОСЛЕ строки оригинала.")
+                ov.write_lines(out)
+                log(f"  [overlay] __mods.list: +'{ru_name}' ({'после оригинала' if done else 'В КОНЕЦ!'}); БЭКАП: {bak}")
+            else:
+                log(f"  [overlay] строка '{ru_name}' уже есть в __mods.list (повторная установка)")
+            if PR is not None: PR.idle()
+            log(f"  [OK] РУ-оверлей готов: {ru_name} (откат: python overlay.py uninstall {m['name']})")
     # персист translate.csv в папке мода (оригинал|перевод) — для ручной правки
     try:
         export_mod_csv(target, entries, done)
