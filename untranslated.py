@@ -80,7 +80,10 @@ def untranslated_stats(mods, state_dir, verbose=None):
     import prefilter
     prefilter.configure(os.path.join(_HERE, "dict.json"), _po_paths, state_dir)
     import ru_twins
-
+    # 2026-09-24: единый ID-based предикат (совместно с translate_mods/search_mods)
+    import game_localization as _glz
+    _glz.configure(po_paths=_po_paths, game_dir=_game)
+    _ign_desc = bool((_cfg.get("translate") or {}).get("ignore_mod_description", True))
     amods_all = _cache.all_mods()
     gpo = prefilter.game_po_map()  # memoized: {en_lower: ru} из .po игры
     log = verbose or (lambda *_a: None)
@@ -89,6 +92,11 @@ def untranslated_stats(mods, state_dir, verbose=None):
         mf = m.get("modfile")
         total = untr = 0
         if not (mf and os.path.exists(mf)):
+            out.append((m, 0, 0))
+            continue
+        # 2026-09-24: RU-оверлеи (<имя> RUS) — производные наших переводов:
+        # их текст УЖЕ русский. В список «нужно перевести» они НЕ входят.
+        if (m.get("name") or "").strip().lower().endswith(" rus"):
             out.append((m, 0, 0))
             continue
         h = _md5_file(mf)
@@ -122,6 +130,12 @@ def untranslated_stats(mods, state_dir, verbose=None):
                 continue
         for e in entries:
             total += 1
+            # 2026-09-24: единый ID-based предикат — совпадает с translate_mods
+            # и search_mods: (a) не переводим то, что игнорируем настройкой
+            # (top-level description при ignore_mod_description, игра-локализует
+            # по object-ID); (b) иначе — 4 источника «уже переведено».
+            if not _glz.should_translate(e, _ign_desc):
+                continue  # настройка/игра сама — не считаем как «нужно»
             en = e.get("original") or ""
             if own.get(str(e.get("i"))):
                 continue  # (1) наш кэш
@@ -130,6 +144,8 @@ def untranslated_stats(mods, state_dir, verbose=None):
                     continue  # (2) RU-близнец
             except Exception:
                 pass
+            # (3) .po игры по тексту — ДЖОЙНТ с game_localizes: по object-ID уже
+            # выше (should_translate); по тексту остаётся для записей без record-ключ
             if en and en.lower() in gpo:
                 continue  # (3) .po игры
             if en and prefilter.lookup(en)[0]:
