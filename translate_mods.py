@@ -1055,6 +1055,14 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
     efile = os.path.join(STATE, f"{h}_entries.json")
     mfile = os.path.join(STATE, f"{h}_mapping.json")
     CUR.update({"mapfile": mfile, "mapref": None})
+    # 2026-09-25 BUGFIX: GAME_SKIP — глобальный set, ключенный по entry.i
+    # (ИНДЕКСУ внутри мода). Между модами индексы совпадают, и оставшийся
+    # GAME_SKIP предыдущего мода (особенно после game-po мода, где все i
+    # помечены) маскирует строки следующего мода как «уже переведены игрой»:
+    # todo строится как `entries not in GAME_SKIP` → перевод пропущен, в
+    # оверлей попадает EN-оригинал (Moisture Farming: 16 → «перевожу 1»).
+    # Сбрасываем ДО каждого мода.
+    GAME_SKIP.clear()
     # 1. extract (cached per content hash)
     if not NO_CACHE and os.path.exists(efile):
         entries = json.load(open(efile, encoding="utf-8"))
@@ -1124,7 +1132,21 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
         json.dump([], open(mfile, "w", encoding="utf-8"), ensure_ascii=False)
     if not FORCE and os.path.exists(mfile):
         prev = {str(x["i"]): x["ru"] for x in json.load(open(mfile, encoding="utf-8"))}
-        done = {k: v for k, v in prev.items() if v}
+        # 2026-09-25 (fix «отравленный кэш блокирует перевод»): отбрасываем из
+        # resume-состояния значения, не проходящие has_real_translation к ТЕКУЩЕМУ
+        # EN-оригиналу (эхо RU==EN от старых прогонов, мусор LLM). Иначе done_map
+        # оказывается «полным», todo пустым, и LLM НИКОГА не переводит эти строки —
+        # а финальный save их выкидывает, оставая в оверлее EN-оригиналом.
+        from validate_translation import has_real_translation as _hrt_resume
+        _en_by_i2 = {str(e.get("i")): (e.get("original") or "").strip() for e in entries}
+        _dead = {k for k, v in prev.items()
+                 if not (v or "").strip() or not _hrt_resume(_en_by_i2.get(k, ""), str(v))}
+        if _dead:
+            done = {k: v for k, v in prev.items() if k not in _dead}
+            log(f"  [resume] отброшено из состояния: {len(_dead)} строк "
+                f"(эхо/пустое/невалидное — переведу заново)")
+        else:
+            done = {k: v for k, v in prev.items() if v}
         if drop_ids:
             drop = {str(x) for x in drop_ids}
             removed = [k for k in drop if k in done]
