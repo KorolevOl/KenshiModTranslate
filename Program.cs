@@ -161,18 +161,45 @@ static int DoApply(string modPath, string mappingJson, string outMod, string? ke
     var records = re.modData.Records;
     bool keepOnlyActive = keepOnly != null && keepOnly.Length > 0;
     int dropped = 0;
-    // (2026-09-24) keepOnly: если задан substring (например "-Medieval_Crossbows"),
+    // (2026-09-24) keepOnly: если задан substring (например "Medieval_Crossbows"),
     // из output удаляются ВСЕ чужие записи — только объект-записи этого мода
     // остаются. Это защищает translation-оверлей от перезаписи базовой локали
     // игры (Sand Ninja→«Ниндзя» и т.п. не должны слетать из-за перевода мода).
+    // НОВЫЙ РЕЖИМ 2026-09-24: keepOnly = JSON-массив точных StringId записей
+    // (["id1","id2",...]) — keep ТОЛЬКО их. Точный режим нужен, когда внутреннее
+    // имя-namespace записи НЕ равно видимому имени мода (Great Beak Things:
+    // строки лежат в ns "High Beak Things.mod" + "rebirth.mod" — substring
+    // "Great Beak Things" ничего не находит → оверлей выходит пустым, только
+    // description). Python строит список из mapping (i → entries[i].key).
     if (keepOnlyActive)
     {
         int before = records.Count;
-        re.modData.Records = records.Where(r =>
-            r.StringId != null && r.StringId.Contains(keepOnly, StringComparison.OrdinalIgnoreCase)
-        ).ToList();
+        if (keepOnly.TrimStart().StartsWith("["))
+        {
+            try
+            {
+                var ids = JsonSerializer.Deserialize<HashSet<string>>(keepOnly,
+                    new JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+                re.modData.Records = records.Where(r =>
+                    r.StringId != null && ids.Contains(r.StringId)
+                ).ToList();
+            }
+            catch
+            {
+                re.modData.Records = records.Where(r =>
+                    r.StringId != null && r.StringId.Contains(keepOnly, StringComparison.OrdinalIgnoreCase)
+                ).ToList();
+            }
+        }
+        else
+        {
+            re.modData.Records = records.Where(r =>
+                r.StringId != null && r.StringId.Contains(keepOnly, StringComparison.OrdinalIgnoreCase)
+            ).ToList();
+        }
         dropped = before - re.modData.Records.Count;
-        Console.Error.WriteLine($"keepOnly={keepOnly}: {re.modData.Records.Count} осталось, {dropped} удалено");
+        bool exactMode = keepOnly.TrimStart().StartsWith("[");
+        Console.Error.WriteLine($"keepOnly: {re.modData.Records.Count} осталось, {dropped} удалено (режим: {(exactMode ? "точные StringId" : "substring")})");
         records = re.modData.Records;
     }
     // (2026-09-22) NOTE on the rebirth incident: extract() is the enforced guard —

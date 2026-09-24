@@ -1294,7 +1294,26 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
             for old in (out_mod, vjson):
                 if os.path.exists(old):
                     os.remove(old)
-            run_dotnet(["apply", target, mfile, out_mod, modbase])  # keepOnly: только свои записи
+            # 2026-09-24 FIX keepOnly: substring мода не находит записи, когда внутреннее
+            # имя-namespace ≠ видимое имя (Great Beak Things: ns "High Beak Things.mod" +
+            # "rebirth.mod") → оверлей выходил ПУСТЫМ (только description).
+            # Теперь: ТОЧНЫЙ список StringId записей, у которых есть RU (key вида
+            # record<id>_<field> → id). Если RU-строк нет — старый substring-fallback.
+            _kept_ids, _seen_ids = [], set()
+            for _e in entries:
+                _i = str(_e.get("i"))
+                if _i not in done or not done.get(_i):
+                    continue
+                _k = _e.get("key") or ""
+                if _k.startswith("record") and "_" in _k[6:]:
+                    _id = _k[6:_k.rfind("_")]
+                    if _id not in _seen_ids:
+                        _seen_ids.add(_id)
+                        _kept_ids.append(_id)
+            keep_only_arg = json.dumps(_kept_ids) if _kept_ids else modbase
+            log(f"  [overlay] keepOnly: {len(_kept_ids)} точных record-id "
+                + ("" if _kept_ids else "(нет RU-записей — fallback на имя мода)"))
+            run_dotnet(["apply", target, mfile, out_mod, keep_only_arg])
             rc_v, vlog = ov.run_cli(["extract", out_mod, vjson])
             if rc_v != 0:
                 log("  [WARN] verify extract не прошёл — оверлей всё равно ставлю (цифры ниже)")
@@ -1327,23 +1346,48 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
             tgt = os.path.join(tgt_dir, ru_name + ".mod")
             shutil.copy2(out_mod, tgt)
             log(f"  [overlay] установлен: {tgt} ({os.path.getsize(tgt)} B) — EN .mod НЕ тронут")
-            # __mods.list: бэкап + строка оверлея СРАЗУ ПОСЛЕ оригинала (wins по object-ID)
+            # __mods.list: бэкап + строка оверлея СРАЗУ ПОСЛЕ оригинала (wins по object-ID).
+            # 2026-09-24 FIX: launcher/игра ПЕРЕСОРТИРЬ список ПОСЛЕ нашей вставки
+            # (факт: 18:53 вставил после оригинала → к 18:56 RUS стоит ДО оригинала).
+            # Теперь позиция ВЕРИФИЦИРУЕТСЯ по read-back и при необходимости РЕПОЗИЦИОНИРУЕТСЯ.
+            bak = ov.backup_list("install")
             lines = ov.read_lines()
-            if ru_name not in [l.strip() for l in lines]:
-                bak = ov.backup_list("install")
-                out, done = [], False
+            ru_stripped = ru_name.strip()
+            orig_stripped = m["name"].strip()
+            if ru_stripped not in [str(l).strip() for l in lines]:
+                # строки ещё нет — вставляем сразу после оригинала (или в конец)
+                out, seen = [], False
                 for l in lines:
                     out.append(l)
-                    if not done and l.strip() == m["name"]:
-                        out.append(ru_name); done = True
-                if not done:
-                    log(f"  [overlay] ВНИМАНИЕ: строка оригинала '{m['name']}' не найдена в __mods.list — "
-                        f"строка будет удалена при валидации игры (нужен точный Workshop-заголовок). "
-                        f"Проверить в launcher и дописать вручную ПОСЛЕ строки оригинала.")
+                    if not seen and str(l).strip() == orig_stripped:
+                        out.append(ru_name); seen = True
+                if not seen:
+                    log(f"  [overlay] ВНИМАНИЕ: строка оригинала '{orig_stripped}' не найдена — "
+                        f"RUS-строка в конце. Нужен точный Workshop-заголовок; дописать вручную ПОСЛЕ оригинала!")
                 ov.write_lines(out)
-                log(f"  [overlay] __mods.list: +'{ru_name}' ({'после оригинала' if done else 'В КОНЕЦ!'}); БЭКАП: {bak}")
+                log(f"  [overlay] __mods.list: +'{ru_name}' (вставлено); БЭКАП: {os.path.basename(bak)}")
+            # ВЕРИФИКАЦИЯ позиции по read-back: RUS СРАЗУ ПОСЛЕ оригинала
+            vb = [str(l).strip() for l in ov.read_lines()]
+            if ru_stripped in vb and orig_stripped in vb and vb.count(ru_stripped) == 1:
+                i_o = vb.index(orig_stripped)
+                if vb[i_o + 1] != ru_stripped if i_o + 1 < len(vb) else False:
+                    # не на месте (пересортировка) — репозиционируем
+                    vb2 = [l for l in vb if l != ru_stripped]
+                    i2 = next(i for i, l in enumerate(vb2) if l == orig_stripped)
+                    vb2.insert(i2 + 1, ru_stripped)
+                    pv = ov.MODS_LIST + ".pre_position_" + _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    shutil.copy2(ov.MODS_LIST, pv)
+                    ov.write_lines(vb2)
+                    vv = [str(l).strip() for l in ov.read_lines()]
+                    i3 = vv.index(orig_stripped)
+                    ok = i3 + 1 < len(vv) and vv[i3 + 1] == ru_stripped
+                    log(f"  [overlay] __mods.list: позиция '{ru_name}' откорректирована — сразу после оригинала "
+                        + ("✓" if ok else "⚠ ПРОВЕРЬ ВРУЧНУЮ"))
+                else:
+                    log(f"  [overlay] __mods.list: '{ru_name}' сразу после оригинала ✓")
             else:
-                log(f"  [overlay] строка '{ru_name}' уже есть в __mods.list (повторная установка)")
+                log(f"  [overlay] ВНИМАНИЕ: не проверена позиция '{ru_name}' — должна стоять "
+                    f"СРАЗУ ПОСЛЕ '{orig_stripped}' (бэкап: {os.path.basename(bak)})")
             if PR is not None: PR.idle()
             log(f"  [OK] РУ-оверлей готов: {ru_name} (откат: python overlay.py uninstall {m['name']})")
     # CSV уже выведен выше (после кэша, до оверлея) — при ABORT оверлея он
