@@ -992,6 +992,11 @@ def export_mod_csv(target, entries, done):
    пустыми — user заполняет в Excel; в кэш они НЕ попадают (has_real_translation)."""
     import csv as _csv
     from validate_translation import finished_row
+    # 2026-09-24 защита: entries из кэша могут содержать мусорные элементы
+    # (не-dict) — не роняем на них весь CSV.
+    if not isinstance(entries, list):
+        return
+    entries = [e for e in entries if isinstance(e, dict)]
     base = os.path.basename(target)
     if base.lower().endswith(".mod"):
         base = base[:-4]
@@ -1405,7 +1410,11 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
             log("  [skip] --no-overlay: кэш+CSV записаны, оверлей не строю")
         else:
             import overlay as ov
-            ru_name = m["name"] + " RUS"
+            # имя оверлея = имя мода БЕЗ расширения (паттерн: <имя>/<имя>.mod)
+            modbase = m["name"]
+            if modbase.lower().endswith(".mod"):
+                modbase = modbase[: -len(".mod")]
+            ru_name = modbase + " RUS"
             work = os.path.join(r"T:", ".overlay_%s" % m["name"])
             out_mod = os.path.join(work, ru_name + ".mod")
             vjson = os.path.join(work, "v.json")
@@ -1413,8 +1422,8 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
             for old in (out_mod, vjson):
                 if os.path.exists(old):
                     os.remove(old)
-            run_dotnet(["apply", target, mfile, out_mod, m["name"]])  # keepOnly: только свои записи
-            rc_v = ov.run_cli(["extract", out_mod, vjson])
+            run_dotnet(["apply", target, mfile, out_mod, modbase])  # keepOnly: только свои записи
+            rc_v, vlog = ov.run_cli(["extract", out_mod, vjson])
             if rc_v != 0:
                 log("  [WARN] verify extract не прошёл — оверлей всё равно ставлю (цифры ниже)")
             else:
@@ -1425,11 +1434,11 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
                 if not cyr:
                     log(f"  [ABORT] оверлей без кириллицы — не устанавливаю (EN .mod не тронут)")
                     return False
-            # установка: kenshi\\mods\\<Имя> RUS\\<Имя> RUS.mod (эталонный паттерн)
+            # установка: kenshi\\\\mods\\<Имя> RUS\\<Имя> RUS.mod (эталонный паттерн)
             tgt_dir = os.path.join(MODS_DIR, ru_name)
             if os.path.isdir(tgt_dir):
                 # старая версия оверлея — рядом с игрой (NE на T):
-                ovbak = os.path.join(GAME, ".old_%s_%s" % (m["name"], datetime.datetime.now().strftime("%Y%m%d_%H%M%S")))
+                ovbak = os.path.join(GAME, ".old_%s_%s" % (m["name"], _dt.datetime.now().strftime("%Y%m%d_%H%M%S")))
                 shutil.move(tgt_dir, ovbak)
             os.makedirs(tgt_dir, exist_ok=True)
             tgt = os.path.join(tgt_dir, ru_name + ".mod")
