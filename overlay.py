@@ -36,6 +36,11 @@ CLI      = _resolve(P["modtranslate_cli"])
 STATE    = _resolve(P["state"])
 MODS_DIR   = os.path.join(GAME, "mods")
 MODS_LIST  = os.path.join(GAME, "data", "__mods.list")
+# 2026-09-24 (найдено по коду BEEP saveLoadOrder/readModsCfg + Steam-тред + 2/2 живая
+# корреляция 4 RUS-оверлеев): РЕАЛЬНАЯ включённость + порядок загрузки живут в
+# data\\mods.cfg (строки вида "<Имя>.mod", CRLF). __mods.list — это авто-каталог
+# Workshop ("disabled appear only in _mods.list", Steam) — туда вставать мало.
+MODS_CFG   = os.path.join(GAME, "data", "mods.cfg")
 TSCRATCH   = r"T:"
 
 
@@ -66,6 +71,97 @@ def write_lines(lines):
     tmp = MODS_LIST + ".tmp"
     open(tmp, "wb").write(("\r\n".join(lines) + "\r\n").encode("latin-1", "replace"))
     os.replace(tmp, MODS_LIST)
+
+
+# ---------------- data/mods.cfg — РЕАЛЬНАЯ включённость (найдено 2026-09-24) ----------------
+# Модель (код BEEP: readModsCfg -> active, saveLoadOrder -> write):
+#   включён  = строка "<Имя>.mod" есть в data\\mods.cfg;
+#   порядок  = позиция строки (поздний выигрывает, как и в __mods.list);
+#   выключен = в __mods.list виден, в mods.cfg НЕ виден.
+# Формат: CRLF, каждая строка заканчивается ".mod" (проверено по живой файлу).
+def _cfg_lines():
+    """Строки mods.cfg (без BOM/пустых). Файла нет -> []."""
+    if not os.path.exists(MODS_CFG):
+        return []
+    data = open(MODS_CFG, "rb").read()
+    return [l.decode("utf-8", "replace").strip() for l in data.replace(b"\r\n", b"\n").split(b"\n") if l.strip()]
+
+
+def _cfg_write(lines):
+    """Атомарная запись mods.cfg (CRLF, UTF-8 — BEEP пишет utf8, имена модов кириллицей)."""
+    tmp = MODS_CFG + ".tmp"
+    open(tmp, "wb").write(("\r\n".join(lines) + "\r\n").encode("utf-8"))
+    os.replace(tmp, MODS_CFG)
+
+
+def backup_cfg(tag="install"):
+    """Бэкап mods.cfg РЯДОМ С ФАЙЛОМ (как у BEEP: mods.cfg.backup + у нас датируемый)."""
+    if not os.path.exists(MODS_CFG):
+        return None
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    bak = "mods.cfg.%s.%s.bak" % (ts, tag)
+    shutil.copy2(MODS_CFG, os.path.join(os.path.dirname(MODS_CFG), bak))
+    return bak
+
+
+def enable_in_cfg(ru_name, orig_name):
+    """Включает оверлей: строка '<ru_name>.mod' СРАЗУ ПОСЛЕ строки оригинала в mods.cfg.
+    Idempotent (уже есть — просто репозиционирует/проверяет). Возвращает (ok, msg)."""
+    if not os.path.exists(MODS_CFG):
+        return False, "data/mods.cfg не существует — не вношу включённость"
+    bak = backup_cfg("enable")
+    lines = _cfg_lines()
+    ru_line = ru_name + ".mod"
+    def norm(x):
+        b = x[:-4] if x.lower().endswith(".mod") else x
+        return (b + ".mod").lower()
+    have_ru = any(norm(l) == norm(ru_line) for l in lines)
+    if have_ru:
+        # уже включён — проверяем/исправляем позицию относительно оригинала
+        idxs = [i for i, l in enumerate(lines) if norm(l) == norm(ru_line)]
+        i_ru = idxs[0]
+        i_o = next((i for i, l in enumerate(lines) if norm(l) == norm(orig_name + ".mod")), None)
+        if i_o is not None and (i_ru != i_o + 1):
+            rest = [l for l in lines if not (norm(l) == norm(ru_line))]
+            i2 = next(i for i, l in enumerate(rest) if norm(l) == norm(orig_name + ".mod"))
+            rest.insert(i2 + 1, ru_line)
+            _cfg_write(rest)
+            return True, "уже в mods.cfg; позиция откорректирована сразу после оригинала"
+        return True, "уже в mods.cfg"
+    # вставляем сразу после оригинала; оригинала нет — в конец
+    out, seen = [], False
+    for l in lines:
+        out.append(l)
+        if not seen and norm(l) == norm(orig_name + ".mod"):
+            out.append(ru_line); seen = True
+    if not seen:
+        out.append(ru_line)
+    _cfg_write(out)
+    # read-back verification
+    vb = _cfg_lines()
+    ok = norm(ru_line) in [norm(l) for l in vb]
+    msg = ("'+%s%s' в mods.cfg" % (ru_line, " (после оригинала)" if seen else " (оригинала нет — в конец)"))
+    if bak:
+        msg += "; БЭКАП: %s" % os.path.basename(bak)
+    return ok, msg
+
+
+def disable_in_cfg(ru_name):
+    """Выключает оверлей: убирает строку из mods.cfg (оставляет в __mods.list как каталог).
+    Возвращает (removed, bak|None)."""
+    if not os.path.exists(MODS_CFG):
+        return False, None
+    bak = backup_cfg("disable")
+    lines = _cfg_lines()
+    def norm(x):
+        b = x[:-4] if x.lower().endswith(".mod") else x
+        return (b + ".mod").lower()
+    target = norm(ru_name)
+    new = [l for l in lines if norm(l) != target]
+    if len(new) == len(lines):
+        return False, None
+    _cfg_write(new)
+    return True, bak
 
 
 def install(query, mapping_file=None, dry_run=False):
@@ -155,8 +251,11 @@ def install(query, mapping_file=None, dry_run=False):
         write_lines(out)
         print("   __mods.list: +'%s'%s; БЭКАП: %s"
               % (ru_name, " (после оригинала)" if done else " (В КОНЕЦ!)", bak))
+    # 2026-09-24: РЕАЛЬНАЯ включённость = data\mods.cfg (BEEP: readModsCfg->active)
+    ok_c, msg_c = enable_in_cfg(ru_name, name)
+    print("   " + msg_c)
 
-    print("\nГОТОВО. Запусти игру — '%s' должен быть включён (строка в списке = включён), и" % ru_name)
+    print("\nГОТОВО. Запусти игру — '%s' должен быть включён (строки в __mods.list И в data\\mods.cfg)," % ru_name)
     print("имена объектов мода теперь на русском. Откат: python overlay.py uninstall %s" % name)
     return 0
 
@@ -176,6 +275,15 @@ def uninstall(query):
     else:
         write_lines(new)
         print("__mods.list: '-%s' (бэкап: %s)" % (ru_name, bak))
+    # 2026-09-24: выключить из data/mods.cfg (реальная включённость)
+    try:
+        removed, cbak = disable_in_cfg(ru_name)
+        if removed:
+            print("mods.cfg: '-%s.mod' (бэкап: %s)" % (ru_name, os.path.basename(cbak) if cbak else "—"))
+        else:
+            print("mods.cfg: строки '%s.mod' не было" % ru_name)
+    except Exception as ex:
+        print("mods.cfg: не смог выключить: %s" % ex)
     tgt = os.path.join(MODS_DIR, ru_name)
     if os.path.isdir(tgt):
         d = os.path.join(GAME, ".old_%s_%s" % (name, ts))
@@ -191,11 +299,20 @@ def list_installed():
     if not os.path.isdir(MODS_DIR):
         print("каталога mods/ нет"); return 0
     inlist = [l.strip() for l in read_lines()]
+    # 2026-09-24: реальная включённость = data/mods.cfg (BEEP: readModsCfg -> active)
+    cfgset = set(l.lower() for l in _cfg_lines()) if os.path.exists(MODS_CFG) else set()
     found = 0
     for f in sorted(os.listdir(MODS_DIR)):
         if f.endswith(" RUS") and os.path.isdir(os.path.join(MODS_DIR, f)):
             modf = [x for x in os.listdir(os.path.join(MODS_DIR, f)) if x.endswith(".mod")]
-            st = "вкл" if f in inlist else "выкл"
+            enabled = any(l.lower() in ((f + ".mod").lower(), f.lower()) for l in cfgset)
+            seen = f in inlist
+            if enabled:
+                st = "вкл"
+            elif seen:
+                st = "виден/не вкл"
+            else:
+                st = "невидим"
             found += 1
             print("  [%s] %-40s %s" % (st, f, modf[0] if modf else "(нет .mod)"))
     if not found:

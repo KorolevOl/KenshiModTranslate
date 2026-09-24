@@ -1257,9 +1257,22 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
     # Порядок теперь: КЭШ → CSV → оверлей (ABORT влечёт только оверлей).
     try:
         export_mod_csv(target, entries, done)
+        # точный счёт: сколько заполненных строк реально записал export (без game-po)
+        _csv_path = os.path.join(os.path.dirname(target), os.path.basename(target)[:-4] + ".translate.csv")
+        if os.path.exists(_csv_path):
+            import csv as _csvmod
+            _n_rows, _n_fill = 0, 0
+            for _r in _csvmod.reader(open(_csv_path, encoding="utf-8-sig"), delimiter="|"):
+                if not _r or not (_r[0].strip()):
+                    continue
+                _n_rows += 1
+                if len(_r) > 1 and _r[1].strip():
+                    _n_fill += 1
+        else:
+            _n_rows = _n_fill = None
         log(f"  [CSV] готов: {os.path.basename(target)[:-4]}.translate.csv "
-            f"({sum(1 for v2 in done.values() if v2)} переводов, "
-            f"{len(entries)} строк — остальное пусто для ручной правки)")
+            f"({_n_fill if _n_fill is not None else '?'} переводов из {_n_rows if _n_rows is not None else '?'} строк — остальное пусто для ручной правки)"
+            + (f"  [цель: N терминала == N CSV == N RUS-мода]" if _n_rows is not None else ""))
     except Exception as ex:
         log(f"  [csv] не смог записать <имя-мода>.translate.csv: {ex}")
     CUR["mapref"] = None
@@ -1392,6 +1405,17 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
             else:
                 log(f"  [overlay] ВНИМАНИЕ: не проверена позиция '{ru_name}' — должна стоять "
                     f"СРАЗУ ПОСЛЕ '{orig_stripped}' (бэкап: {os.path.basename(bak)})")
+            # 2026-09-24: РЕАЛЬНАЯ включённость = строка в data\mods.cfg (код BEEP:
+            # readModsCfg->active, saveLoadOrder->write; Steam: disabled only in __mods.list).
+            # __mods.list — каталог; без строки в mods.cfg оверлей ВЫКЛЮЧЁН даже если виден.
+            try:
+                cok, cmsg = ov.enable_in_cfg(ru_name, m["name"])
+                if cok:
+                    log(f"  [overlay] {cmsg}")
+                else:
+                    log(f"  [overlay] [WARN] включённость не вносим: {cmsg}")
+            except Exception as ex:
+                log(f"  [overlay] [WARN] mods.cfg: {ex}")
             if PR is not None: PR.idle()
             log(f"  [OK] РУ-оверлей готов: {ru_name} (откат: python overlay.py uninstall {m['name']})")
     # CSV уже выведен выше (после кэша, до оверлея) — при ABORT оверлея он
