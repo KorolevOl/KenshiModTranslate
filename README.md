@@ -191,7 +191,7 @@ Workshop-мод (EN)               RU-оверлей
 | Откатить любой .mod по пути | `./revert_mods.bat --file "E:\path\rebirth.mod"` |
 | Убрать папки удалённых модов | `./revert_mods.bat --clean-orphans` |
 | Полная чистка: кэш + CSV | `./clean_caches.bat --yes` |
-| **Полная очистка v1.8** (все моды + CSV новый/legacy + весь кэш + оверлеи) | `./revert_mods.bat --full-clean` |
+| **Полная очистка v2.0** (все моды + CSV новый/legacy + весь кэш + оверлеи) | `./revert_mods.bat --full-clean` |
 | ...то же, но только показать план | `./revert_mods.bat --full-clean --dry-run` |
 
 ---
