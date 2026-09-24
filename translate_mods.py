@@ -1250,6 +1250,18 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
     _dropped_n = len(done) - len(_kept)
     if _dropped_n:
         log(f"  [кэш] {len(_kept)} реал. переводов в кэш; {_dropped_n} строк (системные/пустые/эхо) вынесены из кэша и CSV")
+    # 2026-09-24 FIX: CSV экпорт НА ПРЯМОЙ — после кэша, ДО оверлея.
+    # Раньше был в самом конце функции: при ABORT-оверлея (круговой
+    # «своих объектов 0») у пользователя пропадал и CSV, и кэш —
+    # а это было ложное срабатывание при общих ключах (description/label).
+    # Порядок теперь: КЭШ → CSV → оверлей (ABORT влечёт только оверлей).
+    try:
+        export_mod_csv(target, entries, done)
+        log(f"  [CSV] готов: {os.path.basename(target)[:-4]}.translate.csv "
+            f"({sum(1 for v2 in done.values() if v2)} переводов, "
+            f"{len(entries)} строк — остальное пусто для ручной правки)")
+    except Exception as ex:
+        log(f"  [csv] не смог записать <имя-мода>.translate.csv: {ex}")
     CUR["mapref"] = None
     if PR is not None: PR.busy("apply .mod…")
     if INPLACE or (m.get("kind") == "game" and m.get("gk") == "data"):
@@ -1288,12 +1300,23 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
                 log("  [WARN] verify extract не прошёл — оверлей всё равно ставлю (цифры ниже)")
             else:
                 v = json.load(open(vjson, encoding="utf-8"))
-                own = [e for e in v if m["name"].lower() in (e.get("key") or "").lower()]
-                cyr = [e for e in own if re.search(r"[\u0400-\u04ff]", e.get("original") or "")]
-                log(f"  [overlay] round-trip check: записей {len(v)}, своих объектов {len(own)}, с кириллицей {len(cyr)}")
-                if not cyr:
+                # 2026-09-24 FIX round-trip: проверка «свой объект = ключ содержит имя мода»
+                # ложно ABORTит моды с ОБЩИМИ ключами (description/label — ключ НЕ содержит
+                # имени мода; пример Great Beak Things: 1 запись, key='description' с RU).
+                # Норматив — кириллица в RU-значении ('original' в .mod = RU). Контр-проверка:
+                # RU-кэш (mfile) должен совпадать по объёму с RU в оверлее.
+                ru_lines = [e for e in v if re.search(r"[\u0400-\u04ff]", e.get("original") or "")]
+                # сколько RU-строк должно было попасть (reали из кэша, без game-po)
+                _e_by_i = {str(e2.get("i")): (e2.get("original") or "").strip() for e2 in entries}
+                from validate_translation import has_real_translation as _hr2
+                expect = sum(1 for k2, v2 in done.items()
+                             if _hr2(_e_by_i.get(k2, ""), str(v2)) and not _in_game_skip(k2))
+                log(f"  [overlay] round-trip check: записей {len(v)}, с кириллицей {len(ru_lines)} (ожидал ~{expect})")
+                if not ru_lines:
                     log(f"  [ABORT] оверлей без кириллицы — не устанавливаю (EN .mod не тронут)")
                     return False
+                if len(ru_lines) + len([e for e in v if not re.search(r"[\u0400-\u04ff]", e.get("original") or "")]) < expect:
+                    log(f"  [WARN] оверлей: RU-строк {len(ru_lines)} < ожидалось {expect} — часть потерялась в apply; ставлю, но проверь в игре")
             # установка: kenshi\\\\mods\\<Имя> RUS\\<Имя> RUS.mod (эталонный паттерн)
             tgt_dir = os.path.join(MODS_DIR, ru_name)
             if os.path.isdir(tgt_dir):
@@ -1323,11 +1346,8 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
                 log(f"  [overlay] строка '{ru_name}' уже есть в __mods.list (повторная установка)")
             if PR is not None: PR.idle()
             log(f"  [OK] РУ-оверлей готов: {ru_name} (откат: python overlay.py uninstall {m['name']})")
-    # персист translate.csv в папке мода (оригинал|перевод) — для ручной правки
-    try:
-        export_mod_csv(target, entries, done)
-    except Exception as ex:
-        log(f"  [csv] не смог записать <имя-мода>.translate.csv: {ex}")
+    # CSV уже выведен выше (после кэша, до оверлея) — при ABORT оверлея он
+    # остался у пользователя. return True: перевод и CSV готовы, оверлей — выше.
     return True
 
 # ---------------- main ----------------
