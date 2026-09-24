@@ -41,6 +41,9 @@ Desktop.ini
 # автоскачанный .NET runtime (install.py -- dotnet-local в папке проекта, без админа)
 dotnet-local/
 
+# релизные ZIP-артефакты — не в репо
+KenshiModTranslate-v*.zip
+
 # Dev-time / migration artifacts (local only)
 _dev/
 _mods_inventory.json
