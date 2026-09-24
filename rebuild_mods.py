@@ -12,7 +12,7 @@ rebuild_mods.py — пересборка .mod из готовых кешей (st
   python rebuild_mods.py --dry-run         # показать, что будет сделано
   python rebuild_mods.py --list            # список доступных модов + статус
 """
-import os, sys, json, re, subprocess
+import os, sys, json, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -21,8 +21,7 @@ _resolve = kmt_paths.resolve
 CFG = json.load(open(os.path.join(HERE, "config.json"), encoding="utf-8"))
 P = CFG["paths"]
 WORKSHOP = _resolve(P["workshop"])
-DOTNET   = _resolve(P["dotnet"])
-CLI      = _resolve(P["modtranslate_cli"])
+# 2026-09-24: DOTNET/CLI перенесены в cli.py (единый источник).
 STATE    = _resolve(P["state"])
 
 def find_hash_for_mod(d):
@@ -70,18 +69,22 @@ def collect_mods(query=None):
     return results
 
 def do_rebuild(appid, mod_path, mapping_path):
-    """Apply mapping → current .mod. Возвращает (applied, total) или None."""
+    """Apply mapping → current .mod. Возвращает (applied, total) или None.
+
+    2026-09-24: subprocess.run + DOTNET/CLI вынесены в cli.py (единый источник).
+    """
+    import cli
     out = mod_path + ".rebuild"
-    r = subprocess.run([DOTNET, CLI, "apply", mod_path, mapping_path, out],
-                       capture_output=True, text=True, timeout=120)
+    # run() не падает на rc!=0 — сам проверяем, чтобы показать лог.
+    rc, log = cli.run(["apply", mod_path, mapping_path, out], timeout=120)
     applied = total = 0
-    for line in (r.stderr or "").split("\n"):
-        m = re.search(r"applied:\s*(\d+)\s*/\s*(\d+)", line)
+    for line in log.splitlines():
+        m = re.search(r"applied:\s*(\d+)/\s*(\d+)", line)
         if m:
             applied, total = int(m.group(1)), int(m.group(2))
             break
-    if not os.path.exists(out):
-        return None, r.stderr.strip()
+    if rc != 0 or not os.path.exists(out):
+        return None, log.strip()
     # check if there's Cyrillic in the output (sanity)
     new_txt = open(out, "rb").read().decode("utf-8", "ignore")
     if not any('\u0400' <= c <= '\u04ff' for c in new_txt):

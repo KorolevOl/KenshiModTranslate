@@ -225,26 +225,18 @@ _HASH_MEMO = {}
 _CACHE_MEMO = {}
 _RUROWS_MEMO = {}
 
+
 def _hash_for_mod(path):
-    """Якорь кеша мода: из соседнего .orig_<h>.backup, иначе md5(файла)."""
+    """Якорь кеша мода: из соседнего .orig_<h>.backup, иначе md5(файла).
+
+    2026-09-24: логика вынесена в cli.mod_hash (единый источник с overlay.py,
+    rebuild_mods.py). Здесь только memo, чтобы не перечитывать файлы в горячих циклах.
+    """
     key = os.path.normcase(os.path.abspath(path))
     if key in _HASH_MEMO:
         return _HASH_MEMO[key]
-    import hashlib
-    base = os.path.basename(path)
-    h = None
-    try:
-        for f in os.listdir(os.path.dirname(path)):
-            if f.startswith(base + ".orig_") and f.endswith(".backup"):
-                h = f[len(base) + 6:-len(".backup")]
-                break
-    except Exception:
-        pass
-    if not h:
-        try:
-            h = hashlib.md5(open(path, "rb").read()).hexdigest()[:12]
-        except Exception:
-            h = None
+    import cli
+    h = cli.mod_hash(path)  # md5-fallback по умолчанию (совместимо со старым поведением)
     _HASH_MEMO[key] = h
     return h
 

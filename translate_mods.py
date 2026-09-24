@@ -69,8 +69,8 @@ GAME     = _resolve(P["game"])                # обычно абсолютны�
 WORKSHOP = _resolve(P["workshop"])            # обычно абсолютный (E:)
 STATE    = _resolve(P["state"])               # 'state' → <HERE>/state
 MODS_DIR = (P.get("mods_dir") and _resolve(P["mods_dir"])) or os.path.join(GAME, "mods")
-DOTTNET  = _resolve(P["dotnet"])              # 'dotnet' или '../dotnet9/dotnet.exe'
-CLI_DOTS = _resolve(P["modtranslate_cli"])    # 'bin/Release/...dll'
+# 2026-09-24: DOTTNET/CLI_DOTS + run_dotnet перенесены в cli.py (единый источник)
+# import cli как _cli в месте использования run_dotnet (ниже).
 
 # ---------------- dynamic RU-LOCALES HINTS (po_files.json) ----------------
 import po_hints
@@ -1025,11 +1025,19 @@ def export_mod_csv(target, entries, done):
         log(f"  [csv] записано {n_filled} заполнен. строк; пропущено {n_skipped} системных/непереводимых")
     return out, len(entries), n_filled
 # ---------------- dotnet CLI ----------------
+# --- CLI: единый источник cli.py (ранее был свой DOTTNET/CLI_DOTS + run_dotnet) ---
+import cli as _cli
+
+
 def run_dotnet(args):
-    r = subprocess.run([DOTTNET, CLI_DOTS] + args, capture_output=True, text=True, timeout=300)
-    if r.returncode != 0:
-        raise RuntimeError("dotnet CLI failed:\n" + (r.stderr or r.stdout)[:2000])
-    return r
+    """Legacy wrapper. Делегирует на cli.run_or_raise (raise on non-zero).
+
+    2026-09-24: DOTTNET/CLI_DOTS + run_dotnet дублировали overlay.run_cli и
+    rebuild_mods subprocess.run; всё свдано в cli.py. Этот alias сохранён,
+    чтобы не трогать 4 внутренних вызова.
+    """
+    _cli.run_or_raise(args)
+    return None
 
 # ---------------- one mod ----------------
 def _csv_lineno_to_originals(csd):

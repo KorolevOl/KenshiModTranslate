@@ -45,3 +45,8 @@ dotnet-local/
 _dev/
 _mods_inventory.json
 _mods_inventory_pre_migration.json
+
+# Web-research artifacts (local only)
+ddg_cap[0-9].html
+fandom_translating.txt
+kz_page.html

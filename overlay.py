@@ -26,6 +26,7 @@ sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
 import kmt_paths
 _resolve = kmt_paths.resolve
+import cli  # единый CLI wrapper + find_mod + mod_hash
 CFG = json.load(open(os.path.join(HERE, "config.json"), encoding="utf-8"))
 P = CFG["paths"]
 GAME     = _resolve(P["game"])
@@ -38,39 +39,13 @@ MODS_LIST  = os.path.join(GAME, "data", "__mods.list")
 TSCRATCH   = r"T:"
 
 
-def find_mod(query):
-    """Workshop-моды по id или (части) имени -> [(appid, dir, name, modfile), ...]."""
-    q = (query or "").strip(); ql = q.lower()
-    out = []
-    for appid in sorted(os.listdir(WORKSHOP), key=lambda x: int(x) if x.isdigit() else 0):
-        d = os.path.join(WORKSHOP, appid)
-        if not os.path.isdir(d):
-            continue
-        for f in sorted(os.listdir(d)):
-            if not f.lower().endswith(".mod"):
-                continue
-            name = f[:-4]
-            if name.lower().endswith("rus"):
-                continue  # уже чей-то RU-оверлей (Workshop) — не кандидат на перевод
-            if appid == q or (ql and (ql in name.lower() or name.lower() in ql)):
-                out.append((appid, d, name, os.path.join(d, f)))
-    return out
-
-
-def mod_hash(modfile):
-    """hash EN-бэкапа (.orig_<h>.backup рядом) — совпадает с кэш-именем в state/."""
-    base = os.path.basename(modfile); d = os.path.dirname(modfile)
-    for f in os.listdir(d):
-        if f.startswith(base + ".orig_") and f.endswith(".backup"):
-            return f[len(base) + 6:-len(".backup")]
-    return None
-
-
-def run_cli(args, timeout=180):
-    r = subprocess.run([DOTNET, CLI] + args, capture_output=True, timeout=timeout, cwd=HERE)
-    err = r.stderr.decode("utf-8", "replace") if isinstance(r.stderr, (bytes, bytearray)) else (r.stderr or "")
-    out = r.stdout.decode("utf-8", "replace") if isinstance(r.stdout, (bytes, bytearray)) else (r.stdout or "")
-    return r.returncode, err + out
+# --- re-export из cli.py (единый источник, дубли убраны 2026-09-24) ---
+find_mod = cli.find_mod
+# overlay: строгий режим — только .orig_<h>.backup рядом; md5-fallback ВКЛЮЧАЕТСЯ
+# search_mods (там это легитимно). Для overlay: без fallback (ключ кэша — ТОЛЬКО
+# hash из .orig-бэкапа), иначе state/<md5>_mapping.json — неверный ключ.
+mod_hash = lambda modfile: cli.mod_hash(modfile, fallback_md5=False)
+run_cli  = lambda args, timeout=180: cli.run(args, timeout)
 
 
 def backup_list(tag):
