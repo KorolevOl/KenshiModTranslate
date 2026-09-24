@@ -20,8 +20,8 @@ try
     {
         case "extract": return DoExtract(args[1], args[2]);
         case "apply":
-            if (args.Length >= 4) return DoApply(args[1], args[2], args[3]);
-            Console.Error.WriteLine("apply needs 3 args"); return 2;
+            if (args.Length >= 4) return DoApply(args[1], args[2], args[3], args.Length >= 5 ? args[4] : null);
+            Console.Error.WriteLine("apply needs 3 args [optional 4th: keep-only record-id substring]"); return 2;
         default:
             Console.Error.WriteLine($"unknown verb: {args[0]}");
             return 2;
@@ -143,7 +143,7 @@ static int DoExtract(string modPath, string outJson)
     return 0;
 }
 
-static int DoApply(string modPath, string mappingJson, string outMod)
+static int DoApply(string modPath, string mappingJson, string outMod, string? keepOnly = null)
 {
     if (!File.Exists(modPath)) { Console.Error.WriteLine($"mod not found: {modPath}"); return 1; }
     if (!File.Exists(mappingJson)) { Console.Error.WriteLine($"mapping not found: {mappingJson}"); return 1; }
@@ -159,6 +159,22 @@ static int DoApply(string modPath, string mappingJson, string outMod)
 
     int applied = 0;
     var records = re.modData.Records;
+    bool keepOnlyActive = keepOnly != null && keepOnly.Length > 0;
+    int dropped = 0;
+    // (2026-09-24) keepOnly: если задан substring (например "-Medieval_Crossbows"),
+    // из output удаляются ВСЕ чужие записи — только объект-записи этого мода
+    // остаются. Это защищает translation-оверлей от перезаписи базовой локали
+    // игры (Sand Ninja→«Ниндзя» и т.п. не должны слетать из-за перевода мода).
+    if (keepOnlyActive)
+    {
+        int before = records.Count;
+        re.modData.Records = records.Where(r =>
+            r.StringId != null && r.StringId.Contains(keepOnly, StringComparison.OrdinalIgnoreCase)
+        ).ToList();
+        dropped = before - re.modData.Records.Count;
+        Console.Error.WriteLine($"keepOnly={keepOnly}: {re.modData.Records.Count} осталось, {dropped} удалено");
+        records = re.modData.Records;
+    }
     // (2026-09-22) NOTE on the rebirth incident: extract() is the enforced guard —
     // it excludes cross-referenced names and anim-type names from `entries`. apply()
     // only writes what extract() returned, so stale/poisoned mapping rows for those
