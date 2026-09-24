@@ -129,13 +129,14 @@ def untranslated_stats(mods, state_dir, verbose=None):
                 out.append((m, 0, 0))
                 continue
         for e in entries:
-            total += 1
             # 2026-09-24: единый ID-based предикат — совпадает с translate_mods
-            # и search_mods: (a) не переводим то, что игнорируем настройкой
-            # (top-level description при ignore_mod_description, игра-локализует
-            # по object-ID); (b) иначе — 4 источника «уже переведено».
+            # и search_mods. Строка, которую НЕ переводим (oписание-мод при
+            # ignore_mod_description, game-локализация по object-ID) — НЕ
+            # кандидат: НЕ в total (знаменатель!), НЕ в untr, НЕ в CSV, НЕ в
+            # RUS-моде. Тогда инвариант: терминал == CSV == RUS-мод.
             if not _glz.should_translate(e, _ign_desc):
-                continue  # настройка/игра сама — не считаем как «нужно»
+                continue  # не кандидат — вообще в счёте не участвует
+            total += 1  # только переводимые строки — в знаменатель
             en = e.get("original") or ""
             if own.get(str(e.get("i"))):
                 continue  # (1) наш кэш

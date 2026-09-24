@@ -1232,13 +1232,17 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
             json.dump([{"i": int(k), "ru": v} for k, v in sorted(_kept, key=lambda kv: int(kv[0]))],
                       open(mfile, "w", encoding="utf-8"), ensure_ascii=False)
             log(f"  [no-llm] кэш: {len(_kept)} строк сохранено в {os.path.basename(mfile)}"
-                + (f" ({len(GAME_SKIP)} строк игры не в кэш — локализует сама игра)" if GAME_SKIP else ""))
+                + (f" ({len(GAME_SKIP)} строк игры/описания не в кэш)" if GAME_SKIP else ""))
         try:
             export_mod_csv(target, entries, done)
+            # 2026-09-25: знаменатель = КАНДИДАТЫ (не все entries): строки,
+            # которые игра/настройка НЕ переводят (GAME_SKIP: object-ID из .po +
+            # описание-мод) НЕ входят в счёт. Тогда: CSV-строк == терминал == RUS-мод.
+            _n_cand = sum(1 for e in entries if str(e["i"]) not in GAME_SKIP)
             _gp = len(GAME_SKIP)
             log(f"  [no-llm] CSV готов: {os.path.basename(target)[:-4]}.translate.csv "
-                f"({filled_real}/{len(entries)} реал. перевода из кеша"
-                + (f"; {_gp} строк игры НЕ в CSV/кэш (локал. сама игра)" if _gp else "")
+                f"({filled_real}/{_n_cand} реал. перевода из кеша"
+                + (f"; {_gp} игрок/описание НЕ в CSV/кэш" if _gp else "")
                 + " — остальное пусто, переведи сам)")
             log(f"  [no-llm] после правки: assemble_mod.bat \"{name}\"")
         except Exception as ex:
@@ -1255,9 +1259,12 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
                          / CHARS_PER_TOK)
             PR.begin_mod(name, _tok, done=_tok, unit="ток")
     CUR["mapref"] = None
-    filled = sum(1 for v in done.values() if v)
-    unfilled = len(entries) - filled
-    log(f"  coverage: {filled}/{len(entries)}" + (f"  ({unfilled} пропущено)" if unfilled else ""))
+    filled = sum(1 for v in done.values() if v and str(v).strip())
+    # 2026-09-25: знаменатель = КАНДИДАТЫ (не GAME_SKIP: object-ID из .po + описание-мод).
+    # Тогда terminal == CSV == RUS-мод.
+    _n_cand = sum(1 for e in entries if str(e["i"]) not in GAME_SKIP)
+    unfilled = _n_cand - filled
+    log(f"  coverage: {filled}/{_n_cand}" + (f"  ({unfilled} пропущено)" if unfilled else ""))
     # GAME-PO-ВСЕ (2026-09-24): если ВСЕ строки в этом моде уже локализованы .по
     # игры (нет ни одной строки, которую НАДО переводить) — это законный финал:
     # кэш оставляем пустым, .mod не трогаем, CSV-экспорт (без game-po строк).
