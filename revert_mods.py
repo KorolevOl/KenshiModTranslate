@@ -283,7 +283,8 @@ def main():
         queries = TM.parse_list_file(args[i + 1])
         args = args[:i] + args[i + 2:]
     args = [a for a in args if a not in ("--include-excluded",)]
-    TM.INCLUDE_EXCLUDED = os.environ.get("KENSHI_INCLUDE_EXCLUDED") == "1" or "--include-excluded" in sys.argv
+    import exclude as _excl
+    _excl.set_include_excluded(os.environ.get("KENSHI_INCLUDE_EXCLUDED") == "1" or "--include-excluded" in sys.argv)
     queries += args
 
     all_mods = TM.workshop_mods() + getattr(TM, "game_mods", lambda: [])()
@@ -296,7 +297,7 @@ def main():
                 continue
             if m["modfile"] in seen:
                 continue
-            if TM.is_excluded(m["name"], m["modfile"]) and not TM.INCLUDE_EXCLUDED:
+            if TM.is_excluded(m["name"], m["modfile"]) and not _excl.INCLUDE_EXCLUDED:
                 skipped_excl.append(m)
                 continue
             seen.add(m["modfile"])

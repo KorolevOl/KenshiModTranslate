@@ -130,47 +130,19 @@ THINKING_OFF = bool(T.get("enable_thinking", False) is False)
 PROMPT_FILE = T.get("prompt_file", "prompt.txt")
 if not os.path.isabs(PROMPT_FILE):
     PROMPT_FILE = os.path.join(HERE, PROMPT_FILE)
-def load_prompt():
-    # Parse the two-section prompt file into (system, user_template).
-    txt = open(PROMPT_FILE, encoding="utf-8").read()
-    # Split on the [USER] marker; everything before it = system.
-    # Find the line that starts the user section exactly.
-    user_marker = "\n[USER]\n"
-    idx = txt.find(user_marker)
-    if idx < 0:
-        raise RuntimeError(f"prompt file missing [USER] section: {PROMPT_FILE}")
-    system = txt[:idx].replace("[SYSTEM]", "").strip()
-    user   = txt[idx + len(user_marker):].strip()
-    # Strip lines starting with '#' (comment lines), but keep placeholder lines.
-    def _strip_comments(s):
-        out = []
-        for line in s.splitlines():
-            if line.startswith("#"):
-                continue
-            out.append(line)
-        return "\n".join(out)
-    return _strip_comments(system), _strip_comments(user)
 
-SYS_PROMPT, USER_PROMPT_TMPL = load_prompt()
+# 2026-09-24: prompt-логика + DICT вынесены в prompt.py (единый источник,
+# тестируется без тяжёлого графа translate_mods). Re-export ниже сохраняет
+# совместимость (TM.SYS_PROMPT и т.п. — как раньше).
+import prompt as _prompt_mod
+load_prompt          = _prompt_mod.load_prompt
+SYS_PROMPT           = _prompt_mod.SYS_PROMPT
+USER_PROMPT_TMPL     = _prompt_mod.USER_PROMPT_TMPL
+DICT_PATH            = _prompt_mod.DICT_PATH
+DICT                 = _prompt_mod.DICT
+dict_block_for_prompt = _prompt_mod.dict_block_for_prompt
+apply_dict           = _prompt_mod.apply_dict
 
-# ---- Dictionary (UI terms etc.) ----
-DICT_PATH  = T.get("dict", "dict.json")
-if not os.path.isabs(DICT_PATH):
-    DICT_PATH = os.path.join(HERE, DICT_PATH)
-DICT = {"exact": {}, "words": set()}
-if os.path.isfile(DICT_PATH):
-    d = json.load(open(DICT_PATH, encoding="utf-8-sig"))
-    DICT["exact"] = {k.lower().strip(): v for k, v in (d.get("exact") or {}).items()}
-    # words — WHITELIST названий (без значений): термины, безвредные для
-    # подстановки word-boundary ВНУТРИ строки. Значения всегда берутся из exact
-    # (words ⊆ exact; дубли значений исключены).
-    # Поддерживаем оба формата файла: список имён (новый) и dict {en: ru} (старый,
-    # значения игнорируются — источник один: exact).
-    raw = d.get("words")
-    if isinstance(raw, dict):
-        DICT["words"] = {k.lower().strip() for k in raw}
-    elif isinstance(raw, list):
-        DICT["words"] = {w.lower().strip() for w in raw if isinstance(w, str)}
 
 # ---- Pre-LLM filter (СЛОЙ 1 regex + СЛОЙ 2 reuse) ----
 # СЛОЙ 2: пул готовых EN->RU переводов — dict.json exact (канон) > .po игры >
@@ -202,40 +174,19 @@ def _in_game_skip(i):
     return str(i) in GAME_SKIP
 
 
-# ---------- exclusion patterns ----------
-EXCL_PATH = T.get("exclude_file", "exclude.txt")
-if not os.path.isabs(EXCL_PATH):
-    EXCL_PATH = os.path.join(HERE, EXCL_PATH)
-EXCLUDE_RES = []
-if os.path.isfile(EXCL_PATH):
-    for ln in open(EXCL_PATH, encoding="utf-8-sig", errors="replace"):
-        ln = ln.strip()
-        if not ln or ln.startswith("#"):
-            continue
-        try:
-            EXCLUDE_RES.append(re.compile(ln, re.IGNORECASE))
-        except re.error as ex:
-            print(f"[warn] bad exclude regex skipped: {ln!r} ({ex})", file=sys.stderr)
-
-def is_excluded(name, modfile=None):
-    """True if the mod name (or .mod filename) matches any exclusion pattern."""
-    texts = [name or ""]
-    if modfile:
-        texts.append(os.path.basename(modfile))
-        texts.append(os.path.basename(modfile)[:-4])
-    # variant with common separators normalized to spaces so \b works on "RecruitPrisoners_RUS"
-    for t in list(texts):
-        texts.append(re.sub(r"[_\-().]+", " ", t))
-    for rx in EXCLUDE_RES:
-        for t in texts:
-            if t and rx.search(t):
-                return True
-    return False
+# ---------- exclusion (re-export из exclude.py) ----------
+# 2026-09-24: EXCLUDE_RES / is_excluded / INCLUDE_EXCLUDED вынесены в exclude.py
+# (единый источник, тестируется без тяжёлого графа translate_mods).
+# Мутабельный INCLUDE_EXCLUDED: читать/писать через exclude.INCLUDE_EXCLUDED
+# и exclude.set_include_excluded() (см. revert_mods.py, main() в translate_mods.py).
+import exclude  # noqa: E402
+EXCLUDE_RES = exclude.EXCLUDE_RES
+EXCL_PATH = exclude.EXCL_PATH
+is_excluded = exclude.is_excluded
 
 LLM_BASE   = L["base_url"]
 LLM_MODEL  = L["model"]
 LLM_KEY    = L.get("api_key")
-INCLUDE_EXCLUDED = os.environ.get("KENSHI_INCLUDE_EXCLUDED") == "1"
 
 os.makedirs(STATE, exist_ok=True)
 CUR = {"mapfile": None, "mapref": None}
@@ -286,162 +237,26 @@ def tqdm_write(msg):
     tqdm.write("" if msg is None else str(msg))
 PROGRESS = {"progress": None}
 
-# ---------------- dictionary ----------------
-def dict_block_for_prompt():
-    """Словарь в промпте: ОБЪЕДИНЕНИЕ exact ∪ words, каждый ключ — ОДИН раз.
-    words ⊆ exact (whitelist имён), поэтому union == exact: 153 строки,
-    без повторов (было 266). Значения — всегда из exact (единый источник)."""
-    merged = {}
-    for en in DICT["words"]:
-        if en in DICT["exact"]:
-            merged[en] = DICT["exact"][en]
-    for en, ru in (DICT.get("exact") or {}).items():
-        merged[en.lower().strip()] = ru
-    if not merged:
-        return "(пусто)"
-    lines = ["КАНОНИЧЕСКАЯ ЛОКАЛИЗАЦИЯ (EN => RU), каждое имя/раздел меню — РОВНО так, без учёта регистра EN. "
-             "Если EN-строка входа равна ключу — русское значение должно быть ровно это значение (целиком). "
-             "Если ключ — термин ВНУТРИ длинной фразы — используй в переводе именно это каноническое слово/фразу для этого термина (не придумывай синоним):"]
-    for en in sorted(merged):
-        lines.append(f'  "{en}" => "{merged[en]}"')
-    return "\n".join(lines)
+# ---------------- dictionary (re-export из prompt.py) ----------------
+# 2026-09-24: dict_block_for_prompt + apply_dict вынесены в prompt.py;
+# здесь только совместимый re-export (apply_dict/DICT/DICT_PATH уже в блоке реэкспорта).
 
-def apply_dict(en_original, ru_translated):
-    """Post-fix: enforce dictionary so UI keys/categories stay consistent.
-    1) exact: цела EN-строка = ключу -> вернуть каноническое RU (guaranteed).
-    2) words (безопасное подмножество): термин ВНУТРИ EN-строки -> если LLM
-       оставила EN-literал в переводе, подставить канон из exact (safety-net).
-    Короткие ambiguous-слова (food/power/human...) НЕ в words -> НЕ
-    word-boundary, чтобы слепая замена «power» во фразе не искажала смысл."""
-    low = en_original.strip().lower()
-    if low in DICT["exact"]:
-        return DICT["exact"][low]
-    out = ru_translated
-    # Детерминированный порядок: ДЛИННЕЕ фразы первыми (longest-match wins),
-    # иначе 'skeleton' подставится раньше 'skeleton p4mkii' и оставит мусор.
-    # (Старый dict-формат случайно давал тот же эффект за файлом; set — случайный
-    # порядок обхода, поэтому порядок явно фиксируем.)
-    for en in sorted(DICT["words"], key=lambda k: (len(k), k), reverse=True):
-        if not en:
-            continue
-        ru = DICT["exact"].get(en)
-        if not ru:
-            continue
-        pat = re.compile(r"(?<![A-Za-z])" + re.escape(en) + r"(?![A-Za-z])", re.IGNORECASE)
-        out = pat.sub(ru, out)
-    return out
+# ---------------- discovery (re-export из cache.py) ----------------
+# 2026-09-24: workshop_mods / game_mods / resolve_mod вынесены в cache.py
+# (единый источник, тестируется без тяжёлого графа translate_mods).
+# Все внешние потребители (csv_mod.py, revert_mods.py, verify_translations.py)
+# теперь могут резолвить мод через `cache` напрямую.
+import cache as _cache_mod
+workshop_mods = _cache_mod.workshop_mods
+game_mods     = _cache_mod.game_mods
+all_mods_all  = _cache_mod.all_mods
+resolve_mod_orig = _cache_mod.resolve_mod  # internal: log=print default
 
-# ---------------- discovery ----------------
-def workshop_mods():
-    out = []
-    if not os.path.isdir(WORKSHOP):
-        return out
-    for d in sorted(os.listdir(WORKSHOP)):
-        p = os.path.join(WORKSHOP, d)
-        if not os.path.isdir(p) or not d.isdigit():
-            continue
-        name = None
-        info = [f for f in os.listdir(p) if f.startswith("_") and f.endswith(".info")]
-        if info:
-            try:
-                txt = open(os.path.join(p, info[0]), encoding="utf-8", errors="replace").read()
-                m = re.search(r"<name>(.*?)</name>", txt, re.DOTALL)
-                if m:
-                    name = m.group(1).strip()
-            except Exception:
-                pass
-        modfiles = [f for f in os.listdir(p) if f.lower().endswith(".mod")]
-        if not name:
-            name = (modfiles[0] if modfiles else d)[:-4]
-        out.append({"id": d, "name": name, "dir": p,
-                    "modfile": os.path.join(p, modfiles[0]) if modfiles else None})
-    return out
-
-def game_mods():
-    """Встроенные моды ИГРЫ (2026-09-23):
-      • kenshi\\data\\*.mod  — базовая локализация (rebirth.mod, Dialogue.mod, Newwworld.mod);
-      • kenshi\\mods\\<sub>\\*.mod — вручную установленные (не Workshop).
-    id человекочитаемый (`game:rebirth`, `game:FCS_extended/x`) — resolve_mod
-    подхватывает его по подсстроке, если имя неоднозначно.
-    Искусственные файлы (наши .backup/.revert_) — игнорируются."""
-    out = []
-    seen = set()
-    def add(p, idval, gk):
-        p = os.path.abspath(p)
-        key = os.path.normcase(p)
-        if key in seen:
-            return
-        seen.add(key)
-        base = os.path.basename(p)
-        out.append({"id": idval, "name": base[:-4],
-                    "dir": os.path.dirname(p), "modfile": p,
-                    "kind": "game", "gk": gk})
-    data_dir = os.path.join(GAME, "data")
-    if os.path.isdir(data_dir):
-        for f in sorted(os.listdir(data_dir)):
-            if not f.lower().endswith(".mod") or not os.path.isfile(os.path.join(data_dir, f)):
-                continue
-            if any(tag in f for tag in (".backup", ".orig_", ".revert_", ".prev", ".new", ".broken")):
-                continue
-            add(os.path.join(data_dir, f), f"game:{f[:-4]}", "data")
-    mods_root = os.path.join(GAME, "mods")
-    if os.path.isdir(mods_root):
-        for d in sorted(os.listdir(mods_root)):
-            dp = os.path.join(mods_root, d)
-            if not os.path.isdir(dp):
-                continue
-            for f in sorted(os.listdir(dp)):
-                if not f.lower().endswith(".mod") or not os.path.isfile(os.path.join(dp, f)):
-                    continue
-                if any(tag in f for tag in (".backup", ".orig_", ".revert_", ".prev", ".new", ".broken")):
-                    continue
-                add(os.path.join(dp, f), f"game:{d}/{f[:-4]}", "mods")
-    return out
 
 def resolve_mod(query, all_mods):
-    q = query.strip()
-    if os.path.isfile(q) and q.lower().endswith(".mod"):
-        return {"id": "-", "name": os.path.basename(q)[:-4], "dir": os.path.dirname(q), "modfile": q}
-    if os.path.isdir(q):
-        mf = [os.path.join(q, f) for f in os.listdir(q) if f.lower().endswith(".mod")]
-        if mf:
-            if os.path.abspath(q).lower().startswith(WORKSHOP.lower()):
-                parent = os.path.basename(os.path.dirname(q))
-                for m in all_mods:
-                    if m["id"] == parent:
-                        return m
-            return {"id": "-", "name": os.path.basename(os.path.normpath(q)), "dir": q, "modfile": mf[0]}
-    if q.isdigit():
-        for m in all_mods:
-            if m["id"] == q:
-                return m
-        return None
-    ql = q.lower()
-    # 1) ТОЧНОЕ имя (case-insensitive) — primary: кэш/verify дают точные заголовки.
-    #    Раньше тут был только substring-поиск, и «Tents»+«Tents RUS» давали 2 kanda
-    #    -> resolve=None -> fix молча пропускал мод (2026-09-19, баг fix_translations).
-    exact = [m for m in all_mods if (m["name"] or "").lower() == ql]
-    if len(exact) == 1:
-        return exact[0]
-    if len(exact) > 1:
-        log(f"[!] несколько мода с ИДЕНТИЧНЫМ именем '{q}' — неоднозначно, уточни id:")
-        for i, m in enumerate(exact[:8]):
-            log(f"    {i}: {m['name']}  (id {m['id']})  {os.path.basename(m['modfile'] or '')}")
-        return None
-    # 2) нет точного совпадения — substring (для ручного CLI-запуска по куску имени)
-    def hay(m):
-        return " ".join([m["name"] or "", m["id"], os.path.basename(m["modfile"] or "")]).lower()
-    cands = [m for m in all_mods if ql in hay(m) or ql.replace(" ", "") in hay(m).replace(" ", "")]
-    cands.sort(key=lambda m: len(m["name"] or ""))
-    if len(cands) == 1:
-        return cands[0]
-    if len(cands) > 1:
-        log(f"[!] несколько мода подходят для '{q}':")
-        for i, m in enumerate(cands[:8]):
-            log(f"    {i}: {m['name']}  (id {m['id']})")
-        log("    выбери один: перезапусти командой с точным именем или id")
-        return None
-    return None
+    """Compat wrapper: resolve_mod из cache.py + log из translate_mods."""
+    import cache as _c
+    return _c.resolve_mod(query, all_mods, log=log)
 
 def ensure_target(m):
     """Целевой .mod для перевода.
@@ -1522,14 +1337,13 @@ def parse_list_file(path):
     return out
 
 def main():
-    global INCLUDE_EXCLUDED
     if "--force" in sys.argv:
         sys.argv.remove("--force")
     if "--no-llm" in sys.argv:
         sys.argv.remove("--no-llm")
     if "--include-excluded" in sys.argv:
         sys.argv.remove("--include-excluded")
-        INCLUDE_EXCLUDED = True
+        exclude.set_include_excluded(True)
     # 2026-09-23: --temperature <0..2> — переопределить temperature из config.json
     # на этот запуск (например, --temperature 0.3 для более «сухого» перевода).
     if "--temperature" in sys.argv:
@@ -1655,7 +1469,7 @@ def main():
             log(f"         (очистка: revert_mods.py --list --clean-orphans)")
             orphan_skipped.append(m)
             continue
-        if is_excluded(m["name"], m["modfile"]) and not INCLUDE_EXCLUDED:
+        if is_excluded(m["name"], m["modfile"]) and not exclude.INCLUDE_EXCLUDED:
             skipped_excl.append(m)
         else:
             mods.append(m)
@@ -1723,7 +1537,7 @@ def main():
         log(f"[exclude] {EXCL_PATH}: {len(skipped_excl)} пропущено: "
             f"{', '.join(m['name'] for m in skipped_excl[:8])}"
             + (f" ...(+{len(skipped_excl)-8} ещё)" if len(skipped_excl) > 8 else "")
-            + ("  (override: --include-excluded)" if not INCLUDE_EXCLUDED else ""))
+            + ("  (override: --include-excluded)" if not exclude.INCLUDE_EXCLUDED else ""))
         if not mods:
             log("    все запрошенные моды в исключениях - используй --include-excluded для принудительного запуска")
     if queries:
