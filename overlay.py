@@ -8,8 +8,9 @@ overlay.py — ядро алгоритма «RU-оверлей поверх Work
     (эталонный паттерн Nude Mod HD Rus: имя строки = имя папки = имя файла).
   * Внутри — ТОЛЬКО собственные объекты мода (CLI apply 4-й arg = keepOnly),
     чужие базовые записи (gamedata.base / rebirth и т.п.) не копируются.
-  * Строка оверлея вставляется в data\\__mods.list СРАЗУ ПОСЛЕ строки оригинала
-    (поздний в списке выигрывает по object-ID). Перед правкой — автобэкап в T:.
+  * Строка оверлея вставляется в data\__mods.list СРАЗУ ПОСЛЕ строки оригинала
+    (поздний в списке выигрывает по object-ID). Перед правкой — автобэкап
+    __mods.list РЯДОМ С ИГРОЙ (kenshi\data\<ts>.bak) — T: это RAM-диск.
   * Исходный EN-.mod НЕ трогаем: авторское обновление меняет .mod, оверлей
     живёт отдельно и продолжает действовать — перевод не слетает.
 
@@ -73,10 +74,12 @@ def run_cli(args, timeout=180):
 
 
 def backup_list(tag):
+    """Бэкап __mods.list РЯДОМ С ИГРОЙ (kenshi\\data\). T: это RAM-диск —
+    на нём бэкап ненадёжен (перезагрузка = утрата)."""
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    bak = os.path.join(TSCRATCH, "__mods.list.%s.%s" % (ts, tag))
-    shutil.copy2(MODS_LIST, bak)
-    return bak
+    bak = "__mods.list.%s.%s.bak" % (ts, tag)
+    shutil.copy2(MODS_LIST, os.path.join(os.path.dirname(MODS_LIST), bak))
+    return os.path.basename(bak)
 
 
 def read_lines():
@@ -150,8 +153,9 @@ def install(query, mapping_file=None, dry_run=False):
     tgt_dir = os.path.join(MODS_DIR, ru_name)
     if os.path.exists(tgt_dir):
         bak = ".old_%s_%s" % (name, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
-        shutil.move(tgt_dir, os.path.join(TSCRATCH, bak))
-        print("   старая версия оверлея: %s" % os.path.join(TSCRATCH, bak))
+        # старая версия оверлея — рядом с игрой (НЕ на T: — там RAM-диск)
+        shutil.move(tgt_dir, os.path.join(GAME, bak))
+        print("   старая версия оверлея: %s" % os.path.join(GAME, bak))
     os.makedirs(tgt_dir, exist_ok=True)
     tgt = os.path.join(tgt_dir, ru_name + ".mod")
     shutil.copy2(out_mod, tgt)
@@ -162,7 +166,7 @@ def install(query, mapping_file=None, dry_run=False):
     if ru_name in [l.strip() for l in lines]:
         print("   строка уже есть в __mods.list (повторная установка)")
     else:
-        bak = backup_list("install")
+        bak = backup_list("install")   # рядом с игрой: kenshi\data\__mods.list.<ts>.install.bak
         out, done = [], False
         for l in lines:
             out.append(l)
@@ -199,7 +203,7 @@ def uninstall(query):
         print("__mods.list: '-%s' (бэкап: %s)" % (ru_name, bak))
     tgt = os.path.join(MODS_DIR, ru_name)
     if os.path.isdir(tgt):
-        d = os.path.join(TSCRATCH, ".old_%s_%s" % (name, ts))
+        d = os.path.join(GAME, ".old_%s_%s" % (name, ts))
         shutil.move(tgt, d)
         print("каталог оверлея: %s" % d)
     else:

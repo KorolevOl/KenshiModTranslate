@@ -112,6 +112,8 @@ NO_LLM     = bool(T.get("no_llm", False)) or "--no-llm" in sys.argv  # 2026-09-2
 # --in-place  — старое поведение: apply прямо в .mod (встроенные kenshi\\data + экзотика)
 INPLACE  = "--in-place" in sys.argv or bool(T.get("inplace", False))
 NO_OVERLAY = "--no-overlay" in sys.argv
+# 2026-09-24: бэкапы (__mods.list, старые версии оверлеев) — РЯДОМ С ИГРОЙ,
+# а НЕ на T: (RAM-диск: перезагрузка = утрата). T: — только рабочая зона (work/).
 # 2026-09-23: точечный перевод — только выбранные строки, без полного пере-перевода.
 # --lines "1,5-10,42" — номера строк в .translate.csv (1-based, как в Excel)
 # --text "фраза" (можно несколько) — частичное совпадение в "original", регистр не учитывается
@@ -1426,9 +1428,8 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
             # установка: kenshi\\mods\\<Имя> RUS\\<Имя> RUS.mod (эталонный паттерн)
             tgt_dir = os.path.join(MODS_DIR, ru_name)
             if os.path.isdir(tgt_dir):
-                ovbak = os.path.join(r"T:", ".old_%s_%s" % (m["name"], datetime.datetime.now().strftime("%Y%m%d_%H%M%S")))
-                os.makedirs(os.path.dirname(ovbak), exist_ok=True)
-                shutil.rmtree(ovbak, ignore_errors=True)
+                # старая версия оверлея — рядом с игрой (NE на T):
+                ovbak = os.path.join(GAME, ".old_%s_%s" % (m["name"], datetime.datetime.now().strftime("%Y%m%d_%H%M%S")))
                 shutil.move(tgt_dir, ovbak)
             os.makedirs(tgt_dir, exist_ok=True)
             tgt = os.path.join(tgt_dir, ru_name + ".mod")

@@ -24,9 +24,10 @@ rem      kenshi\mods\<Name> RUS\<Name> RUS.mod   (OWN records only,
 rem                                              keepOnly = 4th apply arg)
 rem    and its LINE is inserted into data\__mods.list RIGHT AFTER the
 rem    original mod line (later in list wins by object-ID; the game
-rem    enables it itself). Auto-backup of __mods.list -> T:\ before any
-rem    edit. The original EN .mod is never touched: author updates keep
-rem    working, the translation survives them.
+rem    enables it itself). Backups of __mods.list and old overlay versions
+rem    are stored NEXT TO THE GAME (kenshi\data\*.bak / kenshi\.old_*) -
+rem    T: is a RAM disk and cannot hold backups. The original EN .mod is
+rem    never touched: author updates keep working, the translation survives.
 rem    FLAGS: --no-overlay (cache+CSV only, no overlay) | --in-place (old)
 rem    Rollback overlay : python overlay.py uninstall <mod-name>
 rem    List overlays    : python overlay.py list
