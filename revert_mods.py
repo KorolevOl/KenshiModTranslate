@@ -17,9 +17,12 @@
   • .translate.csv / .prev / state-кеш НЕ трогаем (для повторного перевода)
 
 Возврат: 0 = ок/пропуск, 1 = ошибка, 2 = арг.ошибка, 3 = нет мода/бэкапа.
-ПОЛНАЯ ОЧИСТКА (2026-09-24):
+ПОЛНАЯ ОЧИСТКА (2026-09-24, расширено 2026-09-25):
   python revert_mods.py --full-clean              # revert ВСЕХ модов + RUS-оверлеи +
-                                                  # CSV (новый+legacy) + state/ — всё
+                                                  # CSV (новый+legacy) + state/ (весь
+                                                  # кэш, включая .prev) + УДАЛЕНИЕ
+                                                  # EN-бэкапов .orig_*.backup
+  python revert_mods.py --full-clean --keep-backups  # то же, но .orig_*.backup ОСТАТЬ
   python revert_mods.py --full-clean --dry-run    # показать, что будет удалено/перенесено
   python revert_mods.py --full-clean --yes        # без подтверждения (batch)
 Проверка:
@@ -27,7 +30,7 @@
   python revert_mods.py --dry-run <мод>         # показать, не трогая
   python revert_mods.py <мод>                   # откатить
   python revert_mods.py --list-file список.txt   # по списку
-  python revert_mods.py --full-clean             # полная очистка (все моды+кэш+csv+оверлеи)
+  python revert_mods.py --full-clean             # полная очистка (+ бэкапы, если без keep)
   python revert_mods.py                          # все (y/N)
 """
 import os
@@ -189,7 +192,7 @@ def clean_orphans(mods, dry_run=False):
     return moved, trash_root
 
 
-def full_clean(dry_run=False, assume_yes=False):
+def full_clean(dry_run=False, assume_yes=False, keep_backups=False):
     """--full-clean: ПОЛНАЯ ОЧИСТКА — «чистый стол» перед новым переводом.
 
     Делает ВСЁ, что накопилось при переводе, одним движением:
@@ -199,10 +202,16 @@ def full_clean(dry_run=False, assume_yes=False):
          контейнер kenshi\\_kmt_full_clean_<ts> (обратимо, НЕ mdel);
       C) все CSV нового формата <мод>.translate.csv (workshop + кenshi);
       D) все legacy CSV translate.csv (стараго формата, б/ имени мода);
-      E) state/ — ВСЁ (кэш _entries/_mapping/_reuse_pool/_untranslated —
-         чтобы старые легаси-записи не попали в новый перевод через resume).
+      E) state/ — ВСЁ (_entries/_mapping/_reuse_pool/_untranslated/
+         .prev-бэкапы кэшей + ЛЮБЫЕ другие сгенерированные файлы —
+         чтобы старые легаси-записи не попали в новый перевод через resume);
+      F) УДАЛЕНИЕ EN-бэкапов <имя>.mod.orig_<hash>.backup — ПОСЛЕ того как
+         EN-оригинал восстановлен в .mod (A) и проверен (MD5), бэкап
+         становится лишней копией → мdel. Невозвратимо; чтобы ОСТАВИТЬ,
+         передайте --keep-backups.
 
-    Возврат: контейнер + .fullclean_<ts>.bak на registry-файлах.
+    Возврат A–E: контейнер + .fullclean_<ts>.bak на registry-файлах.
+    F) необратимо (EN уже в .mod — бэкап redundant).
     """
     import kmt_paths as kp
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -217,6 +226,10 @@ def full_clean(dry_run=False, assume_yes=False):
 
     # ---------- A) revert модов (EN original из бэкапа) ----------
     all_mods = list(TM.workshop_mods()) + list(getattr(TM, "game_mods", lambda: [])())
+    backups_to_remove = []   # F) удаляЕМ ТОЛЬКО бэкапы, где EN-оригинал
+                             #   гарантированно уже в .mod (revert ok ИЛИ
+                             #   .mod уже == бэкапу). Остальные — НЕ трогаем:
+                             #   там EN ещё не восстановлен, бэкап — последнее.
     for m in all_mods:
         tgt = m.get("modfile")
         if not tgt or not os.path.isfile(tgt):
@@ -225,14 +238,24 @@ def full_clean(dry_run=False, assume_yes=False):
         if not bak:
             continue
         if _md5(tgt) == _md5(bak):
-            continue  # уже оригинал
+            # уже оригинал — бэкап redundant, можно выкинуть в F
+            if not keep_backups:
+                backups_to_remove.append(bak)
+                if dry_run:
+                    print(f"  [dry-run] bak-del (already EN): {bak}")
+            continue
         if dry_run:
             print(f"  [dry-run] revert: {tgt}")
             n_revert += 1
+            if not keep_backups:
+                print(f"  [dry-run] bak-del: {bak}")
             continue
         status, detail = revert_one(tgt)
         n_revert += 1
         print(f"  [{'OK ' if status == 'ok' else 'ERR'}] revert: {os.path.basename(tgt)} — {detail}")
+        if status == "ok" and not keep_backups:
+            backups_to_remove.append(bak)
+        # status != ok → backup оставляем (EN не восстановлен)
 
     # ---------- B) RUS-оверлеи: registry + каталоги ----------
     rus_dirs = []
@@ -344,11 +367,54 @@ def full_clean(dry_run=False, assume_yes=False):
         if len(state_removed) > 8:
             print(f"    …(+{len(state_removed)-8})")
 
+    # ---------- F) EN-бэкапы .orig_*.backup + .revert_* — ПОСЛЕ restore ----------
+    # EN-оригинал уже в .mod (проверен MD5 в revert_one); бэкап — лишняя копия.
+    # .revert_<ts> — старые snapshots переводов из раннего in-place режима;
+    #   после restore EN они уже не нужны. Удаляем оба типа, ПОСЛЕ того
+    #   как EN восстановлен. Невозвратимо; чтобы ОСТАВИТЬ: --keep-backups.
+    bak_removed = 0
+    revert_snaps_removed = 0
+    if not keep_backups:
+        for bak in backups_to_remove:
+            if not dry_run:
+                try:
+                    os.remove(bak)
+                    bak_removed += 1
+                except OSError:
+                    continue
+            print(("  [dry-run] " if dry_run else "  [BakDel] ") + bak)
+        # .revert_* — рядом с .mod (те же папки)
+        for m in all_mods:
+            tgt = m.get("modfile")
+            if not tgt or not os.path.isfile(tgt):
+                continue
+            d = os.path.dirname(tgt)
+            base = os.path.basename(tgt)
+            try:
+                for fn in sorted(os.listdir(d)):
+                    if fn.startswith(base + ".revert_"):
+                        p = os.path.join(d, fn)
+                        if not dry_run:
+                            try:
+                                os.remove(p); revert_snaps_removed += 1
+                            except OSError:
+                                continue
+                        print(("  [dry-run] " if dry_run else "  [SnapDel] ") + fn)
+            except OSError:
+                pass
+    elif backups_to_remove:
+        print(f"  [keep-backups] {len(backups_to_remove)} бэкап(ов) сохранено")
+
     print(f"\n=== FULL-CLEAN {'DRY-RUN' if dry_run else 'DONE'} ===")
-    print(f"  revert:   {n_revert} мод(ов)")
-    print(f"  overlay:  {n_overlay} (контейнер: {os.path.basename(container)})")
-    print(f"  csv:      {n_csv} (новый+legacy)")
-    print(f"  state:    {n_state} файло")
+    print(f"  revert:      {n_revert} мод(ов)")
+    print(f"  overlay:     {n_overlay} (контейнер: {os.path.basename(container)})")
+    print(f"  csv:         {n_csv} (новый+legacy)")
+    print(f"  state:       {n_state} файло (полный кэш: _entries/_mapping/.prev/поулы)")
+    print(f"  backups:     {bak_removed if not dry_run else len(backups_to_remove)} .orig_*.backup "
+          + ("удалено" if (not dry_run and not keep_backups) else
+             ("удалится" if dry_run and not keep_backups else "сохранено (--keep-backups)")))
+    if revert_snaps_removed:
+        print(f"  snapshots:   {revert_snaps_removed} .revert_* (старые in-place) удалено")
     if not dry_run and (n_overlay or n_csv or n_state):
         print(f"  бэкапы: registry .fullclean_{ts}.bak рядом с __mods.list/mods.cfg;")
         print(f"          оверлеи в {container}")
@@ -360,20 +426,22 @@ def main():
     dry_run = "--dry-run" in args
     clean = "--clean" in args
     full = "--full-clean" in args
+    keep_backups = "--keep-backups" in args
     assume_yes = "--yes" in args or os.environ.get("KENSHI_YES") == "1"
-    args = [a for a in args if a not in ("--dry-run", "--list", "--clean", "--full-clean", "--yes")]
+    args = [a for a in args if a not in ("--dry-run", "--list", "--clean", "--full-clean", "--yes", "--keep-backups")]
 
     if full:
         if not dry_run and not assume_yes:
             try:
                 ans = input("ПОЛНАЯ очистка: revert всех модов + удалить все RUS-оверлеи/"
-                            "CSV/кэш? (нельзя отключить по-очереди) [y/N]: ").strip().lower()
+                            "CSV/кэш + УДАЛИТЬ EN-бэкапы .orig_*.backup? "
+                            "[y/N] (бэкапы оставить: --keep-backups): ").strip().lower()
             except EOFError:
                 ans = "n"
             if ans not in ("y", "yes", "д", "да"):
                 print("прервано (ничего не изменено)")
                 return 1
-        return full_clean(dry_run=dry_run, assume_yes=assume_yes)
+        return full_clean(dry_run=dry_run, assume_yes=assume_yes, keep_backups=keep_backups)
 
     # --clean-orphans: перенести orphan-папки (без .mod) в trash (обратимо)
     if "--clean-orphans" in sys.argv:
