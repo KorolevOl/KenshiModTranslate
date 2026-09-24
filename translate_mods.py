@@ -1377,26 +1377,25 @@ def parse_list_file(path):
 # 2026-09-24: интерактивный выбор модов (translate_mods.bat без аргументов)
 # ---------------------------------------------------------------------------
 def interactive_pick(all_mods, state_dir, scope=None, verbose=None):
-    """Двухшаговое меню: область (1/2/3, пропустить можно передав scope) →
-    список модов с кол-вом непереведённых строк → выбор номеров
-    (1,5,7-12 / all / выход).
+    """Интерактивное меню (translate_mods.bat без аргументов).
+
+    Показывает ВСЕ моды с числом НЕПЕРЕВЕДЁННЫХ строк (группами:
+    Steam Workshop / kenshi\\mods) + старое «все моды»-меню (steam/mods/all).
+    Выбор: номера/диапазоны/имена/all.
 
     Возврат:
-      (scope, names)  — scope="steam"/"mods"/"all", names=[имя,...]
-                        (пустой список = «переведи все моды этой области»)
-      (None, [])      — пользователь вышел без выбора (main: выход 0)
-    Без TTY (автоматизация) — (None, []) → main идёт по старому пути.
+      (scope, names)  — names=[имя,...] (пустой список = «все моды области»
+                        по старому пути; scope="steam"/"mods"/"all")
+      (None, [])      — выход без выбора (main: выход с кодом)
+    Без TTY (автоматизация) — ("steam", []) — старый дефолт: Steam, все.
+    Если scope уже задан (флаг --steam/--mods/--all) — непереведённые
+    этой области сразу, без меню.
     """
     verbose = verbose or print
-    # Без TTY (автоматизация/pipe) — старый дефолт: Steam Workshop, все моды.
-    # KENSHI_FORCE_MENU=1 — разрешает pipe-тесты (input() читает stdin).
-    if not (sys.stdin.isatty() and sys.stdout.isatty()) \
-            and os.environ.get("KENSHI_FORCE_MENU") != "1":
-        return ("steam", [])
+    import re
 
     def area_list(s):
-        """Старое правило: встроенные (kenshi\\data\\*.mod) НИКОГДА не в «все».
-        'steam' = Workshop; 'mods' = kenshi\\mods\\<суб>\\*.mod; 'all' = их сумма."""
+        """'steam'=Workshop; 'mods'=kenshi\\mods\\<суб>; 'all'=сумма (без data\\)."""
         out = []
         for m in all_mods:
             if not m.get("modfile"):
@@ -1413,59 +1412,83 @@ def interactive_pick(all_mods, state_dir, scope=None, verbose=None):
             out.append(m)
         return out
 
-    # --- шаг 1: область (как было раньше — совместимо) ---
-    if scope is None:
-        n_ws  = len([m for m in area_list("steam")])
-        n_mod = len([m for m in area_list("mods")])
-        print()
-        print("  === Kenshi Mod Translate — интерактивный выбор ===")
-        print(f"  1) Steam Workshop                ({n_ws} модов)")
-        print(f"  2) Локальные папки kenshi\\mods  ({n_mod} модов)")
-        print(f"  3) Всё вместе                    ({n_ws + n_mod} модов)")
-        while True:
-            try:
-                sel = input("  область (1/2/3, 1 = по умолчанию): ").strip() or "1"
-            except EOFError:
-                return (None, [])
-            if sel in ("1", "2", "3"):
-                scope = {"1": "steam", "2": "mods", "3": "all"}[sel]
-                break
-            if sel in ("q", "quit", "выход", "exit"):
-                return (None, [])
-    mods = area_list(scope)
+    def pending_names_for(scope):
+        """Непереведённые строки → имена (для авто-выбора в области)."""
+        mods = area_list(scope)
+        try:
+            import untranslated as _ut
+            stats = _ut.cached_report(mods, state_dir)
+        except Exception:
+            return [m["name"] for m in mods]
+        return [m["name"] for (m, _t, u) in stats if u > 0]
 
-    # --- шаг 2: список с кол-вом непереведённых строк ---
+    # scope уже задан флагом → без меню, только непереведённые из области
+    if scope is not None:
+        return (scope, pending_names_for(scope))
+
+    # Без TTY (автоматизация/pipe) — старый дефолт: Steam Workshop, все.
+    if not (sys.stdin.isatty() and sys.stdout.isatty()) \
+            and os.environ.get("KENSHI_FORCE_MENU") != "1":
+        return ("steam", [])
+
+    steam = area_list("steam")
+    mods_ = area_list("mods")
+    # подсчёт для обеих групп (кэш отчёта — один проход)
     import untranslated as _ut
-    print(f"\n  Считаю непереведённые строки ({len(mods)} модов)...")
+    both = steam + mods_
+    print(f"\n  Считаю непереведённые строки ({len(both)} модов — может занять минуту)...")
     try:
-        stats = _ut.cached_report(mods, state_dir)
+        stats = _ut.cached_report(both, state_dir)
     except Exception as ex:
-        verbose(f"  [!] подсчёт недоступен ({ex}) — переводу подлежат ВСЕ из области")
-        stats = [(m, 0, 0) for m in mods]
-    pending = [(m, t, u) for (m, t, u) in stats if u > 0]
-    done    = [(m, t, u) for (m, t, u) in stats if u == 0 and t > 0]
-    noent   = [(m, t, u) for (m, t, u) in stats if t == 0]
-    name_by_pos = {i + 1: m["name"] for i, (m, _t, _u) in enumerate(pending)}
+        verbose(f"  [!] подсчёт недоступен ({ex})")
+        stats = [(m, 0, 0) for m in both]
+    st_by_name = {}
+    for (m, t, u) in stats:
+        st_by_name[(m["name"] or "").lower()] = (m, t, u)
 
-    print(f"\n  --- непереведённые: {len(pending)} ---")
-    for i, (m, t, u) in enumerate(pending, 1):
-        print(f"  {i:>4}) {m['name'][:58]:58s}  {u:>5d}/{t:<5d}")
-    if done:
-        print(f"  --- уже переведены (кэш или RU-близнец): {len(done)} ---")
-        for m, t, u in done[:8]:
-            print(f"        {m['name'][:58]:58s}  {t:>5d} {'✓ переведено' if u == 0 else ''}")
-        if len(done) > 8:
-            print(f"        … и ещё {len(done) - 8}")
-    if noent:
-        print(f"  --- без строк (пустой .mod): {len(noent)} ---")
-    if not pending and not done:
-        print("  (в этой области нет модов со строками)")
+    def section(name_list, title):
+        rows = []
+        for m in name_list:
+            mm, t, u = st_by_name.get((m["name"] or "").lower(), (m, 0, 0))
+            rows.append((mm, t, u))
+        pend = [r for r in rows if r[2] > 0]
+        done = [r for r in rows if r[2] == 0 and r[1] > 0]
+        return rows, pend, done
 
-    # --- шаг 3: выбор ---
-    print("\n  Выбор: номера через запятую (1, 2, 5), диапазоном (1-10),")
-    print("        пусто/Enter = все непереведённые, all = то же,"
-          " name:имя1,имя2 — по именам, q = выход без перевода")
-    import re
+    _, s_pend, s_done = section(steam, "Steam Workshop")
+    _, m_pend, m_done = section(mods_, "kenshi\\mods")
+    noent = [r for r in (s_pend + s_done + m_pend + m_done) if False]  # (заглушка)
+
+    print()
+    print("  === Kenshi Mod Translate — моды с непереведёнными строками ===")
+    print(f"  --- Steam Workshop: непереведённых {len(s_pend)} из {len(steam)} ---")
+    for i, (m, t, u) in enumerate(s_pend, 1):
+        print(f"  {i:>4}) {m['name'][:60]:60s}  {u:>5d}/{t:<5d}")
+    if s_done:
+        print(f"      (переведено: {len(s_done)}: "
+              + ", ".join(m["name"] for m, _t, _u in s_done[:5])
+              + (f" …(+{len(s_done)-5})" if len(s_done) > 5 else ""))
+    base = len(s_pend)
+    print(f"  --- kenshi\\mods: непереведённых {len(m_pend)} из {len(mods_)} ---")
+    for i, (m, t, u) in enumerate(m_pend, base + 1):
+        print(f"  {i:>4}) {m['name'][:60]:60s}  {u:>5d}/{t:<5d}")
+    if m_done:
+        print(f"      (переведено: {len(m_done)}: "
+              + ", ".join(m["name"] for m, _t, _u in m_done[:5])
+              + (f" …(+{len(m_done)-5})" if len(m_done) > 5 else ""))
+    n_all = len(s_pend) + len(m_pend)
+    if not n_all:
+        print("  (непереведённых строк нет — все моды готовы)")
+
+    name_by_pos = {}
+    for i, (m, _t, _u) in enumerate(s_pend, 1):
+        name_by_pos[i] = m["name"]
+    for i, (m, _t, _u) in enumerate(m_pend, base + 1):
+        name_by_pos[i] = m["name"]
+
+    print("\n  Выбор:  номера/диапазоны (1, 5, 10-15)  |  name:имя1,имя2")
+    print("          all = все непереведённые | steam = все Steam Workshop")
+    print("          mods = все kenshi\\mods   | q = выход без перевода")
     while True:
         try:
             inp = input("  какие моды переводить?: ").strip()
@@ -1474,42 +1497,47 @@ def interactive_pick(all_mods, state_dir, scope=None, verbose=None):
         low = inp.lower()
         if low in ("q", "quit", "выход", "exit"):
             return (None, [])
-        if low in ("", "all", "все", "да"):
-            chosen = [m["name"] for m, _t, _u in pending]
+        if low in ("steam", "2"):
+            return ("steam", [])
+        if low in ("mods", "3"):
+            return ("mods", [])
+        if low in ("всё", "всёвместе", "all3"):
+            return ("all", [])
+        if low in ("all", "все", "да", ""):
+            chosen = list(name_by_pos.values())
             break
         if low.startswith("name:"):
             wanted = [x.strip().lower() for x in inp[5:].split(",") if x.strip()]
             chosen = []
-            for (m, _t, u) in pending:
-                nm = (m["name"] or "").lower()
+            for n in dict.fromkeys(name_by_pos.values()):  # дедуп, порядок
+                nm = n.lower()
                 if any(w in nm or nm in w for w in wanted):
-                    chosen.append(m["name"])
+                    chosen.append(n)
             if not chosen:
-                print("  [!] из непереведённых не нашлось ни одно из имён — попробуй ещё")
+                print("  [!] не нашлось ни одно из имён — попробуй ещё")
                 continue
             break
-        # разбор "1, 3, 7-12"
         chosen = []
         ok = True
         for part in [p.strip() for p in inp.split(",") if p.strip()]:
             rng = re.match(r"^(\d+)-(\d+)$", part)
             if rng:
                 a, b = int(rng.group(1)), int(rng.group(2))
-                if a < 1 or b > len(pending) or a > b:
-                    print(f"  [!] диапазон {part} вне списка (1..{len(pending)})")
+                if a < 1 or b > n_all or a > b:
+                    print(f"  [!] диапазон {part} вне списка (1..{n_all})")
                     ok = False
                     break
-                chosen.extend(name_by_pos[i] for i in range(a, b + 1))
+                chosen.extend(name_by_pos[i] for i in range(a, b + 1) if i in name_by_pos)
             elif part.isdigit():
-                n = int(part)
-                if not (1 <= n <= len(pending)):
-                    print(f"  [!] номер {n} вне списка (1..{len(pending)})")
+                n_n = int(part)
+                if n_n not in name_by_pos:
+                    print(f"  [!] номер {n_n} вне списка (1..{n_all})")
                     ok = False
                     break
-                chosen.append(name_by_pos[n])
+                chosen.append(name_by_pos[n_n])
             else:
-                print(f"  [!] не понял '{part}' — только номера, диапазоны 'a-b', "
-                      f"all, name:имя1,имя2")
+                print(f"  [!] не понял '{part}' — номера, диапазоны, name:имя, "
+                      f"all/steam/mods")
                 ok = False
                 break
         if ok:
@@ -1517,15 +1545,8 @@ def interactive_pick(all_mods, state_dir, scope=None, verbose=None):
     if not chosen:
         print("  (выбора нет — выход без перевода)")
         return (None, [])
-    # дедупликация с сохранением порядка
-    seen, uniq = set(), []
-    for n in chosen:
-        k = n.lower()
-        if k not in seen:
-            seen.add(k)
-            uniq.append(n)
-    print(f"  → перевожу {len(uniq)} мод(ов) из области '{scope}'")
-    return (scope, uniq)
+    print(f"  → перевожу {len(chosen)} мод(ов)")
+    return ("all", chosen)
 
 
 def main():
