@@ -101,6 +101,12 @@ RETRIES    = int(T.get("http_retries", 3))
 FORCE      = bool(T.get("force_retranslate", False)) or "--force" in sys.argv
 NO_CACHE   = os.environ.get("KENSHI_NO_CACHE") == "1"
 NO_LLM     = bool(T.get("no_llm", False)) or "--no-llm" in sys.argv  # 2026-09-21: только CSV, без LLM
+# 2026-09-24: интерактивный выбор модов (translate_mods.bat без аргументов):
+# после выбора области показывается список модов с количеством НЕПЕРЕВЕДЁННЫХ
+# строк (учёт: наш кэш + RU-близнец из Workshop/папки mods + .po игры + пул),
+# выбор номеров / all / выход. Отключить: config.json → translate
+# "interactive_select": false. Без TTY (автоматизация) — меню не появляется.
+INTERACTIVE = bool(T.get("interactive_select", True))
 # 2026-09-24 (НОВЫЙ АЛГОРИТМ, проверен в игре на Medieval_Crossbows): перевод
 # НЕ пишется прямо в .mod Workshop (Steam-обновление автора это затирает),
 # а собирается в ОТДЕЛЬНЫЙ RU-оверлей kenshi\\mods\\<Имя> RUS\\<Имя> RUS.mod
@@ -1367,6 +1373,161 @@ def parse_list_file(path):
             out.append(ln)
     return out
 
+# ---------------------------------------------------------------------------
+# 2026-09-24: интерактивный выбор модов (translate_mods.bat без аргументов)
+# ---------------------------------------------------------------------------
+def interactive_pick(all_mods, state_dir, scope=None, verbose=None):
+    """Двухшаговое меню: область (1/2/3, пропустить можно передав scope) →
+    список модов с кол-вом непереведённых строк → выбор номеров
+    (1,5,7-12 / all / выход).
+
+    Возврат:
+      (scope, names)  — scope="steam"/"mods"/"all", names=[имя,...]
+                        (пустой список = «переведи все моды этой области»)
+      (None, [])      — пользователь вышел без выбора (main: выход 0)
+    Без TTY (автоматизация) — (None, []) → main идёт по старому пути.
+    """
+    verbose = verbose or print
+    # Без TTY (автоматизация/pipe) — старый дефолт: Steam Workshop, все моды.
+    # KENSHI_FORCE_MENU=1 — разрешает pipe-тесты (input() читает stdin).
+    if not (sys.stdin.isatty() and sys.stdout.isatty()) \
+            and os.environ.get("KENSHI_FORCE_MENU") != "1":
+        return ("steam", [])
+
+    def area_list(s):
+        """Старое правило: встроенные (kenshi\\data\\*.mod) НИКОГДА не в «все».
+        'steam' = Workshop; 'mods' = kenshi\\mods\\<суб>\\*.mod; 'all' = их сумма."""
+        out = []
+        for m in all_mods:
+            if not m.get("modfile"):
+                continue
+            if s == "steam":
+                if m.get("kind") == "game":
+                    continue
+            elif s == "mods":
+                if not (m.get("kind") == "game" and m.get("gk") == "mods"):
+                    continue
+            elif s == "all":
+                if m.get("kind") == "game" and m.get("gk") != "mods":
+                    continue
+            out.append(m)
+        return out
+
+    # --- шаг 1: область (как было раньше — совместимо) ---
+    if scope is None:
+        n_ws  = len([m for m in area_list("steam")])
+        n_mod = len([m for m in area_list("mods")])
+        print()
+        print("  === Kenshi Mod Translate — интерактивный выбор ===")
+        print(f"  1) Steam Workshop                ({n_ws} модов)")
+        print(f"  2) Локальные папки kenshi\\mods  ({n_mod} модов)")
+        print(f"  3) Всё вместе                    ({n_ws + n_mod} модов)")
+        while True:
+            try:
+                sel = input("  область (1/2/3, 1 = по умолчанию): ").strip() or "1"
+            except EOFError:
+                return (None, [])
+            if sel in ("1", "2", "3"):
+                scope = {"1": "steam", "2": "mods", "3": "all"}[sel]
+                break
+            if sel in ("q", "quit", "выход", "exit"):
+                return (None, [])
+    mods = area_list(scope)
+
+    # --- шаг 2: список с кол-вом непереведённых строк ---
+    import untranslated as _ut
+    print(f"\n  Считаю непереведённые строки ({len(mods)} модов)...")
+    try:
+        stats = _ut.cached_report(mods, state_dir)
+    except Exception as ex:
+        verbose(f"  [!] подсчёт недоступен ({ex}) — переводу подлежат ВСЕ из области")
+        stats = [(m, 0, 0) for m in mods]
+    pending = [(m, t, u) for (m, t, u) in stats if u > 0]
+    done    = [(m, t, u) for (m, t, u) in stats if u == 0 and t > 0]
+    noent   = [(m, t, u) for (m, t, u) in stats if t == 0]
+    name_by_pos = {i + 1: m["name"] for i, (m, _t, _u) in enumerate(pending)}
+
+    print(f"\n  --- непереведённые: {len(pending)} ---")
+    for i, (m, t, u) in enumerate(pending, 1):
+        print(f"  {i:>4}) {m['name'][:58]:58s}  {u:>5d}/{t:<5d}")
+    if done:
+        print(f"  --- уже переведены (кэш или RU-близнец): {len(done)} ---")
+        for m, t, u in done[:8]:
+            print(f"        {m['name'][:58]:58s}  {t:>5d} {'✓ переведено' if u == 0 else ''}")
+        if len(done) > 8:
+            print(f"        … и ещё {len(done) - 8}")
+    if noent:
+        print(f"  --- без строк (пустой .mod): {len(noent)} ---")
+    if not pending and not done:
+        print("  (в этой области нет модов со строками)")
+
+    # --- шаг 3: выбор ---
+    print("\n  Выбор: номера через запятую (1, 2, 5), диапазоном (1-10),")
+    print("        пусто/Enter = все непереведённые, all = то же,"
+          " name:имя1,имя2 — по именам, q = выход без перевода")
+    import re
+    while True:
+        try:
+            inp = input("  какие моды переводить?: ").strip()
+        except EOFError:
+            return (None, [])
+        low = inp.lower()
+        if low in ("q", "quit", "выход", "exit"):
+            return (None, [])
+        if low in ("", "all", "все", "да"):
+            chosen = [m["name"] for m, _t, _u in pending]
+            break
+        if low.startswith("name:"):
+            wanted = [x.strip().lower() for x in inp[5:].split(",") if x.strip()]
+            chosen = []
+            for (m, _t, u) in pending:
+                nm = (m["name"] or "").lower()
+                if any(w in nm or nm in w for w in wanted):
+                    chosen.append(m["name"])
+            if not chosen:
+                print("  [!] из непереведённых не нашлось ни одно из имён — попробуй ещё")
+                continue
+            break
+        # разбор "1, 3, 7-12"
+        chosen = []
+        ok = True
+        for part in [p.strip() for p in inp.split(",") if p.strip()]:
+            rng = re.match(r"^(\d+)-(\d+)$", part)
+            if rng:
+                a, b = int(rng.group(1)), int(rng.group(2))
+                if a < 1 or b > len(pending) or a > b:
+                    print(f"  [!] диапазон {part} вне списка (1..{len(pending)})")
+                    ok = False
+                    break
+                chosen.extend(name_by_pos[i] for i in range(a, b + 1))
+            elif part.isdigit():
+                n = int(part)
+                if not (1 <= n <= len(pending)):
+                    print(f"  [!] номер {n} вне списка (1..{len(pending)})")
+                    ok = False
+                    break
+                chosen.append(name_by_pos[n])
+            else:
+                print(f"  [!] не понял '{part}' — только номера, диапазоны 'a-b', "
+                      f"all, name:имя1,имя2")
+                ok = False
+                break
+        if ok:
+            break
+    if not chosen:
+        print("  (выбора нет — выход без перевода)")
+        return (None, [])
+    # дедупликация с сохранением порядка
+    seen, uniq = set(), []
+    for n in chosen:
+        k = n.lower()
+        if k not in seen:
+            seen.add(k)
+            uniq.append(n)
+    print(f"  → перевожу {len(uniq)} мод(ов) из области '{scope}'")
+    return (scope, uniq)
+
+
 def main():
     if "--force" in sys.argv:
         sys.argv.remove("--force")
@@ -1487,6 +1648,23 @@ def main():
     game = game_mods()
     all_mods = all_mods + game
     log(f"модов видно: workshop={len(all_mods) - len(game)} + игра(data\\, mods\\)={len(game)}")
+    # ---- 2026-09-24: интерактивный выбор модов (config: interactive_select) ----
+    # Без аргументов и без scope-флагов: список модов с кол-вом
+    # НЕПЕРЕВЕДЁННЫХ строк (учёт: наш кэш + RU-близнец + .po игры + пул) и
+    # выбор номеров. Конкретные имена → в queries (резолв ниже);
+    # «все в области» → SCOPE (старый путь «все моды области»).
+    if not queries and SCOPE is None and INTERACTIVE:
+        picked_scope, picked = interactive_pick(all_mods, STATE, verbose=log)
+        if picked_scope is None:
+            log("прерываю (ничего не выбрано)")
+            return 1
+        if picked:
+            queries = picked
+            log(f"[i] интерактив: выбрано {len(picked)} мод(ов): "
+                + ", ".join(picked[:6]) + (f" …(+{len(picked)-6})" if len(picked) > 6 else ""))
+        else:
+            SCOPE = picked_scope
+            log(f"[i] интерактив: область '{SCOPE}' — все моды целиком")
     skipped_excl = []
     mods = []
     orphan_skipped = []
@@ -1513,6 +1691,11 @@ def main():
         # ВСТРОЕННЫЕ (kenshi\data\*.mod: rebirth/Dialogue/Newwworld) НИКОГДА
         # не в «все» — только по явном имени:
         #   ./translate_mods.bat "rebirth"  "Dialogue"  "Newwworld"
+        # 2026-09-24: интерактивный выбор (config: translate.interactive_select,
+        # дефолт true): после области показывается список модов с количеством
+        # НЕПЕРЕВЕДЁННЫХ строк (учёт: наш кэш + RU-близнец Steam/mods + .po
+        # игры + пул) и выбор номеров. Отсутствует TTY (автоматизация) —
+        # область Steam по умолчанию (старое поведение без меню).
         if SCOPE is None:
             n_ws   = len([m for m in all_mods if m.get("kind") != "game" and m.get("modfile")])
             n_mods = len([m for m in all_mods if m.get("kind") == "game" and m.get("gk") == "mods" and m.get("modfile")])

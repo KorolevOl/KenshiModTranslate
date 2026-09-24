@@ -29,7 +29,8 @@
     "temperature": 0.5,
     "po_hints": true,
     "po_hints_max": 50,
-    "prefilter": true
+    "prefilter": true,
+    "interactive_select": true
   },
   "dict": "dict.json",
   "exclude_file": "exclude.txt"

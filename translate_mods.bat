@@ -3,7 +3,8 @@ setlocal
 rem ============================================================
 rem  Kenshi RU-mod-translation launcher (foreground, resumable)
 rem  usage:
-rem    translate_mods.bat                         - MENU: choose 1) all  2) steam  3) mods
+rem    translate_mods.bat                         - MENU: 1) all  2) steam  3) mods
+rem                                              - then LIST of untranslated mods, pick numbers
 rem    translate_mods.bat --steam                 - same as above (explicit)
 rem    translate_mods.bat --mods                  - ALL mods kenshi\mods\<mod>
 rem    translate_mods.bat --all                   - Steam Workshop + kenshi\mods\<mod>
