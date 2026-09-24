@@ -1092,6 +1092,37 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
         if done:
             log(f"  resume: {len(done)}/{len(entries)} уже готово")
     CUR["mapref"] = done
+    # ---- RU-TWIN PREFILL (2026-09-24) ----
+    # Если для данного мода существует RU-близнец (например "Animal Variations RUS"
+    # при переводе "Animal Variations"), все строки, у которых в близнеце есть
+    # RU-перевод, заполняются СРАЗУ — без обращения к LLM (экономит токены+время).
+    # RU-близнец = готовый перевод, поставленный пользователем из Workshop.
+    # Применяется в обоих путях: --no-llm (CSV) и обычный (LLM).
+    if m and m.get("modfile"):
+        try:
+            import ru_twins
+            amods = all_mods_all()
+            tp = ru_twins.twin_pairs(m["modfile"], amods)
+            if tp:
+                _tw_name = tp[0][3]
+                _tmap = {tk: (tru, ten) for tk, ten, tru, tsrc in tp}
+                _n_tw = 0
+                for e in entries:
+                    i = str(e.get("i"))
+                    if i in done and (done[i] or "").strip():
+                        continue
+                    en = (e.get("original") or "").strip()
+                    if not en:
+                        continue
+                    hit = _tmap.get(e.get("key") or "")
+                    if hit and hit[0] and hit[0].lower() != en.lower():
+                        done[i] = hit[0]
+                        _n_tw += 1
+                if _n_tw:
+                    log(f"  [ru-twin] {_n_tw} строк — RU уже есть в близнеце '{_tw_name}' "
+                        f"({len(tp)} пар), LLM для них не нужен")
+        except Exception:
+            pass
     # 2026-09-21: --no-llm — режим «только CSV»: извлекаем строки, заполняем
     # доступное из кеша/prefilter (локально, 0 LLM) и пишем <имя>.translate.csv
     # — пользователь переводит сам (Excel), потом assemble_mod.bat. НЕ применяем.

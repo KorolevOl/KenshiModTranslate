@@ -289,8 +289,17 @@ def _attach_ru(hits, needle):
     """Для .mod-hits приписать 'ru_rows' (EN, RU, Поле):
     1) наш кеш (state/), если есть — + пустые RU заполняем из .po локации;
     2) нет кеша — EN из C#-парсера (чистый текст, не бинарный мусор) +
-       RU из .po локации (свой .po мода, затем .po игры)."""
+       RU из .po локации (свой .po мода, затем .po игры);
+    3) RU-близнец (2026-09-24) — если мод имеет "RU/RUS/Русский"-близнеца
+       (пользователь установил перевод сам из Workshop), берём RU оттуда."""
     by_path = {}
+    # Lazy-load RU-twin index (раз на процесс)
+    try:
+        import ru_twins as _rt
+        import cache as _cache_for_twin
+        _rt_all_mods = _cache_for_twin.all_mods()
+    except Exception:
+        _rt = None
 
     def resolve(p):
         if p in by_path:
@@ -310,6 +319,29 @@ def _attach_ru(hits, needle):
                 for en, fld in sorted(fm.items(), key=lambda kv: len(kv[0])):
                     if nd in en:
                         rows.append((en, po_idx.get(_po_norm(en), ""), fld))
+        # RU-близнец: заполняем пустые RU
+        try:
+            _rt2 = _rt
+            if _rt2:
+                # Используем twin_pairs (memoized, разовое вычисление)
+                ap = os.path.abspath(p)
+                tp = _rt2.twin_pairs(ap, _rt_all_mods)
+                if tp:
+                    _tw = {(ten or "").strip().lower(): (tru or "").strip()
+                           for tk, ten, tru, tsrc in tp}
+                    new_rows = []
+                    changed = False
+                    for en, ru, fld in rows:
+                        nru = (ru or "").strip()
+                        if not nru:
+                            hit = _tw.get((en or "").strip().lower())
+                            if hit:
+                                nru = hit
+                                changed = True
+                        new_rows.append((en, nru, fld))
+                    rows = new_rows
+        except Exception:
+            pass
         by_path[p] = rows
         return rows
 
