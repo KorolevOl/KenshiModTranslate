@@ -37,6 +37,36 @@ import textutil  # parse_po_file: единый парсер .po
 
 CFG = json.load(open(os.path.join(BASE, "config.json"), encoding="utf-8"))
 P   = CFG["paths"]
+
+# 2026-09-24: ЕДИНЫЙ предикат «нужен ли перевод / покажет ли игра сама» —
+# game_localization (по OBJECT-ID, не по тексту). Подхватываем его здесь,
+# чтобы таблицы и меню выбора корректно считали игровые записи и
+# описания модов (ignore_mod_description, default ON).
+import game_localization as glz
+_g_game  = P.get("game", "")
+_g_lang  = CFG.get("target_lang", "ru_RU")
+glz.configure([os.path.join(_g_game, "locale", _g_lang, "gamedata.po"),
+               os.path.join(_g_game, "locale", _g_lang, "LC_MESSAGES", "main.po")])
+_IGNORE_MOD_DESC = bool(CFG.get("translate", {}).get("ignore_mod_description", True))
+
+
+def _glz_flag(key):
+    """2026-09-24: метка для таблицы search_mods:
+    • 'ИГРА' — запись локализует сама игра (её (objectID, owner) ∈ #: .po);
+    • 'ОПИС' — описание самого МОДА (ignore_mod_description, default ON).
+    Пустая строка, если строка НАДО переводить (своя).
+    """
+    if not key:
+        return ""
+    # игровое: только у записей с record-ID (описания не имеют record)
+    try:
+        if glz.game_localizes(key):
+            return "ИГРА"
+    except Exception:
+        pass
+    if _IGNORE_MOD_DESC and glz.is_mod_description(key):
+        return "ОПИС"
+    return ""
 ST        = kmt_paths.resolve(P["state"])
 WORKSHOP  = kmt_paths.resolve(P["workshop"])
 GAME      = kmt_paths.resolve(P["game"])
@@ -279,7 +309,13 @@ def ru_rows_for_needle(h, needle):
                 if not en:
                     continue
                 if nd in norm(en) or (ru and nd in norm(ru)):
-                    out.append((en, ru, _short_key(e.get("key") or "")))
+                    fld = _short_key(e.get("key") or "")
+                    # 2026-09-24: пометка игнорируемых (игра локализует /
+                    # описание мода) — они «обслуживаются», а не «не переведены».
+                    _f = _glz_flag(e.get("key") or "")
+                    if _f:
+                        fld = (fld + " ·" + _f) if fld else _f
+                    out.append((en, ru, fld))
     out.sort(key=lambda t: len(t[0]))  # короткие (специфичные) строки выше
     _RUROWS_MEMO[key] = out
     return out
@@ -318,6 +354,9 @@ def _attach_ru(hits, needle):
                 fm = _field_map_for_mod(p)
                 for en, fld in sorted(fm.items(), key=lambda kv: len(kv[0])):
                     if nd in en:
+                        _f = _glz_flag(fld)  # fld здесь = имя поля .mod
+                        if _f:
+                            fld = (fld + " ·" + _f) if fld else _f
                         rows.append((en, po_idx.get(_po_norm(en), ""), fld))
         # RU-близнец: заполняем пустые RU
         try:
@@ -767,8 +806,22 @@ def _print_layer(title, n_hits, rows, show_all=False, cap=20):
     if show_all:
         shown, n_hidden = rows, 0
     else:
-        shown = [r for r in rows if not (r[1] and r[1].strip())]
-        n_hidden = len(rows) - len(shown)
+        # По умолчанию: скрываем УЖЕ переведённые + игнорируемые
+        # (·ИГРА — игра отрисует сама по OBJECT-ID; ·ОПИС — описание мода).
+        # --all — все строки.
+        _hidden = 0
+        _shown = []
+        for r in rows:
+            fld = r[2] if len(r) > 2 else ""
+            if (r[1] and str(r[1]).strip()):
+                _hidden += 1
+                continue
+            if "ИГРА" in str(fld) or "ОПИС" in str(fld):
+                _hidden += 1
+                continue
+            _shown.append(r)
+        shown = _shown
+        n_hidden = _hidden
     print(f"\n-- {title} — {n_hits} совпадений --")
     if not shown:
         print(f"  (все {n_hidden} совпадений уже переведены — --all, чтобы показать)")
@@ -842,12 +895,19 @@ def main():
     # По умолчанию включаем ТОЛЬКО файлы, где есть НЕРЕВЕДЁННЫЕ строки (RU пустая).
     # С --all — все файлы, как раньше.
     def _has_untranslated(hits_kind):
-        """True, если в hits есть хотя бы одна строка без RU."""
+        """True, если в hits есть хотя бы одна РЕАЛЬНО непереведённая (своя) строка
+        без RU. Строки, помеченные 'ИГРА' (игра отрисует сама) или 'ОПИС'
+        (игнор описания мода), НЕ считаются непереведёнными — они
+        игнорируются по OBJECT-ID / ignore_mod_description по умолчанию."""
         for h in hits_kind:
             rows = h.get("ru_rows") or []
             if rows:
                 for row in rows:
-                    if not (row[1] and row[1].strip()):
+                    # row = (en, ru, field); field может содержать пометку ·ИГРА / ·ОПИС
+                    fld = row[2] if len(row) > 2 and row[2] else ""
+                    if "ИГРА" in str(fld) or "ОПИС" in str(fld):
+                        continue  # игнорируем (игра / описание мода)
+                    if not (row[1] and str(row[1]).strip()):
                         return True
             elif h.get("snippet"):
                 return True  # нет кэша — значит есть непереведённые

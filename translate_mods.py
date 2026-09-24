@@ -162,22 +162,67 @@ _PRE_PO_PATHS = [
 if PRE_FILTER_ENABLED:
     prefilter.configure(DICT_PATH, _PRE_PO_PATHS, STATE)
 
-# ---- GAME-PO SKIP (2026-09-24) -------------------------------------------------
-# Строки, у которых уже есть непустой RU в .по САМОЙ ИГРЫ (локаль target_lang) —
-# игра сама их рендерит по-русски в .mod, переводить заново бессмысленно.
-# Поэтому НЕ пишем такие строки ни в кэш (state/_mapping.json), ни в
-# <имя-мода>.translate.csv, ни в LLM: «в кэш и CSV — только то, что нужно
-# перевести» (попросил пользователь).
+# ---- GAME-SKIP (2026-09-24, ПРАВКА-ПО-object-ID) ---------------------------
+# Строки, у которых запись ЛОКАЛИЗУЕТ САМА ИГРА (её object-ID ∈ #: ссылки .po
+# ЦЕЛЕВОГО языка) — не в кэш/CSV/LLM/оверлей: игра отрисует RU сама.
+# КРИТИЧНО: решение по record-ID (key), а НЕ по тексту. Старая логика
+# game_po_has(en) сравнивала текст: мод «BeakThingEggFoods» (50606) имел текст
+# «Beak Thing Egg» = текст ванильного яйца (4029) — и её ЗАПИСИ ошибочно
+# помечались «игра локализовёт», хотя игра знает только 4029-gamedata.base.
+# Единый источник решения: game_localization.should_translate(entry).
 #
-# АУТОРИТЕТНЫЙ источник = сам файл .po игры (prefilter.game_po_map()), а НЕ
-# «source» пула: пул перекрывает game.po слоем dict.json (напр. CRAFTING),
-# поэтому src=='game.po' CRAFTING пропустил бы, хотя перевод в игре есть.
-# _GP_SET был удалён — используем prefilter.game_po_has(en) напрямую.
-GAME_SKIP = set()    # {str(entry.i)} — строки, не в кэш/CSV/LLM
+# 2026-09-24: ignore_mod_description (config translate, default TRUE) —
+# топ-уровневое описание САМОГО МОДА (key == 'description', без recordID)
+# НЕ переводится и не ищется: это реклама мода, а не игровой текст.
+import game_localization as glz
+glz.configure(_PRE_PO_PATHS)
+IGNORE_MOD_DESC = bool(T.get("ignore_mod_description", True))
+
+GAME_SKIP = set()    # {str(entry.i)} — строки, не в кэш/CSV/LLM/оверлей
+
+
+def _game_localizes(i, entries_by_i=None):
+    """True, если строка i локализует сама игра (по object-ID из key)."""
+    key = None
+    if entries_by_i is not None:
+        key = (entries_by_i.get(str(i)) or {}).get("key") or ""
+    if not key:
+        return False
+    return glz.game_localizes(key)
+
+
+def _need_translate_entry(entry):
+    """True, если строку НУЖНО перевести (не локализует игра + не мод-описание)."""
+    if not glz.should_translate(entry, ignore_mod_description=IGNORE_MOD_DESC):
+        return False
+    return True
 
 
 def _in_game_skip(i):
     return str(i) in GAME_SKIP
+
+
+def prune_ignored_rows(entries, done_map):
+    """2026-09-24: УБИРАЕТ из done_map строки, которые НАДО игнорировать:
+    (а) запись локализует сама игра (её (objectID, owner) ∈ #: ссылки .po);
+    (б) строка = описание самого МОДА (key=='description', без recordID),
+        если включён ignore_mod_description (default ON).
+    Возвращает число удалённых. Помечает игнорируемые в GAME_SKIP —
+    экспорт CSV/keepOnly/oверлей будут их видеть и пропускать.
+    Вызывается в translate_one — ДО выбора NO_LLM и LLM-веток —
+    чтобы resume-кэш и кэш после LLM были одним и тем же.
+    """
+    removed = 0
+    for e in entries:
+        i = str(e.get("i"))
+        ignore = (glz.game_localizes(e)
+                  or (IGNORE_MOD_DESC and glz.is_mod_description(e)))
+        if not ignore:
+            continue
+        GAME_SKIP.add(i)
+        if done_map.pop(i, None) is not None:
+            removed += 1
+    return removed
 
 
 # ---------- exclusion (re-export из exclude.py) ----------
@@ -569,36 +614,40 @@ def translate_entries(entries, done_map, name, ctx, todo_scope=None):
       со своим прогрессбаром FIX (в токенах) в том же слоте, что и NOW-бар;
     • если строки всё равно не сданы — пустыми; подхватят verify --fix / resume.
 
-    GAME-PO (2026-09-24): строки, чей RU уже есть в .po ИГРЫ (локаль
-    target_lang) — игра рендерит их сама. Pre-pass ниже заполняет их RU из
-    пула и помечает в GAME_SKIP — это работает во ВСЕХ путях (обычный и
-    verify --fix), поэтому фиксер не отправляет их в LLM повторно, даже если
-    они попали в drop_ids (там они были «пустыми»; игра показывает по-русски).
+    GAME-PO (2026-09-24, PRAVKA PO OBJECT-ID): строка НЕ переводится и НЕ
+    пишется в кэш/CSV/оверлей, если ЕЁ ЗАПИСЬ локализует сама игра — т.е.
+    пара (objectID, owner-модуль) из key есть в `#:`-ссылках gamedata.po
+    целевого языка. Решение по ИДЕНТИФИКАТОРУ записи, НЕ по тексту:
+    мод-запись с идентичным ванильному текстом (50606-BeakThingEggFoods
+    'Beak Thing Egg') теперь ПЕРЕВОДИТСЯ (её ID нет в .po), а ванильная
+    4029-gamedata.base игнорируется. Топ-уровневый 'description' МОДА —
+    игнорится параметром ignore_mod_description (default true). Работает
+    во ВСЕХ путях (обычный / fix / scope / no-llm); pre-pass выше помечает
+    такие строки в GAME_SKIP ДО расчёта todo — счёт «N строк», CSV и .mod
+    согласованы по OBJECT-ID.
     """
-    # --- GAME-PO pre-pass (общий для normal и fix/scope). Авторитетный
-    # источник: сами .po-файлы игры (локаль target_lang), не «source» пула
-    # (dict.json маскирует game.po, на что опирается lookup()).
-    if PRE_FILTER_ENABLED:
-        try:
-            _gpm = prefilter.game_po_map()
-        except Exception:
-            _gpm = {}
-        if _gpm:
-            _gp_hit = 0
-            for e in entries:
-                i = str(e.get("i"))
-                if i in done_map:
-                    continue          # уже решено (resume/force/ручное) — не трогаем
-                en = (e.get("original") or "").strip()
-                ru = _gpm.get(en.lower())
-                if ru and ru.lower() != en.lower():
-                    done_map[i] = apply_dict(en, ru)
-                    GAME_SKIP.add(i)
-                    _gp_hit += 1
-            if _gp_hit:
-                log(f"  [game-po] {_gp_hit} строк — RU уже в .по игры; берут готовое, "
-                    f"не в кэш/CSV/LLM (игра локализует сама)")
-    todo = [e for e in entries if str(e["i"]) not in done_map]
+    # --- GAME-PO pre-pass (общий для normal и fix/scope). 2026-09-24 FIXED:
+    # решение по OBJECT-ID (key записи), а не по тексту: строка входит в
+    # GAME_SKIP только если её (id, owner) реально есть в #: ссылках .po игры.
+    # Текстовый game_po_has(en) ЛЖЕ-срабатывал модовых записях с идентичным
+    # ванильным текстом (50606-BeakThingEggFoods ↔ 4029-gamedata.base).
+    # ignore_mod_description (default): топ-уровневый 'description' мода
+    # тоже не переводится (key == 'description', без recordID).
+    _skipped_n = 0
+    for e in entries:
+        i = str(e.get("i"))
+        if glz.game_localizes(e) or (IGNORE_MOD_DESC and glz.is_mod_description(e)):
+            if i not in GAME_SKIP:
+                GAME_SKIP.add(i)
+                _skipped_n += 1
+            continue
+    if _skipped_n:
+        log(f"  [game-po] {_skipped_n} строк по OBJECT-ID локализует сама игра "
+            + (f" (+ описания мода игнор — ignore_mod_description)" if IGNORE_MOD_DESC else "")
+            + " — не в кэш/CSV/LLM/оверлей")
+    # (RU этих строк из .по игры НЕ подставляем: они НЕ нужны — игра
+    #  отрисует сама; done_map остаётся для НЕ-игровых строк)
+    todo = [e for e in entries if str(e["i"]) not in done_map and str(e["i"]) not in GAME_SKIP]
     # 2026-09-23 (точечный перевод): если задан scope — переводим ТОЛЬКО его,
     # даже если строки уже в done_map (это «--force только для этих строк»).
     if todo_scope is not None:
@@ -652,13 +701,12 @@ def translate_entries(entries, done_map, name, ctx, todo_scope=None):
                 n_reused += 1
                 # apply_dict: если en в exact — берём канон RU; иначе подставляем как есть
                 done_map[str(e["i"])] = apply_dict(en, ru)
-                # GAME-PO SKIP: авторитетная проверка — есть EN в .po ИГРЫ?
-                # (пул 'source' ненадёжен: dict.json маскирует game.po)
-                try:
-                    if prefilter.game_po_has(en):
-                        GAME_SKIP.add(str(e["i"]))
-                except Exception:
-                    pass
+                # GAME-SKIP (2026-09-24 ID-based): по OBJECT-ID записи —
+                # если игра локализует саму запись (её (id,owner) ∈ .po) или
+                # это описание мода — строка не нужна (не в кэш/CSV/оверлей).
+                # Старый game_po_has(en) был ТЕКСТОВЫМ и лжесрабатывал.
+                if glz.game_localizes(e) or (IGNORE_MOD_DESC and glz.is_mod_description(e)):
+                    GAME_SKIP.add(str(e["i"]))
                 continue
             keep.append(e)
         todo = keep
@@ -1097,6 +1145,14 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
                     f"(остальные {len(done)} перевода сохранены и не трогаются)")
         if done:
             log(f"  resume: {len(done)}/{len(entries)} уже готово")
+    # 2026-09-24: ОЧИЩЕНИЕ кэша от игнорируемых строк (до RU-TWIN / NO_LLM / LLM).
+    # Объекты, которые игра локализует сама (object-ID ∈ #: ссылка .po) или
+    # описания модов (ignore_mod_description, default ON) — не должны
+    # занимать место в mapping.json / CSV / оверлее, даже если были там
+    # в старые времена (до этого правила).
+    _pruned = prune_ignored_rows(entries, done)
+    if _pruned:
+        log(f"  [prune] {_pruned} строки убраны из кэша (object-ID локализует игра / ignore_mod_description)")
     CUR["mapref"] = done
     # ---- RU-TWIN PREFILL (2026-09-24) ----
     # Если для данного мода существует RU-близнец (например "Animal Variations RUS"
@@ -1117,6 +1173,11 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
                     i = str(e.get("i"))
                     if i in done and (done[i] or "").strip():
                         continue
+                    # 2026-09-24: НЕ заполняем из RU-близнеца строки, которые
+                    # игнорируются (object-ID локализует сама игра /
+                    # ignore_mod_description). GAME_SKIP уже содержит их.
+                    if _in_game_skip(i):
+                        continue
                     en = (e.get("original") or "").strip()
                     if not en:
                         continue
@@ -1134,24 +1195,25 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
     # — пользователь переводит сам (Excel), потом assemble_mod.bat. НЕ применяем.
     if NO_LLM:
         if PRE_FILTER_ENABLED:
-            from validate_translation import is_translatable_text
+            from validate_translation import is_translatable_text, has_real_translation as _hr_n
             reused = 0
             for e in entries:
-                if str(e["i"]) in done and (done[str(e["i"])] or ""):
+                i = str(e["i"])
+                cur = done.get(i, "")
+                # 2026-09-24: ПРОПУСКАЕМ только если уже есть РЕАЛЬНЫЙ (не эхо)
+                # перевод. Эхо (RU==EN, например 'Tamago-yaki') — пере-заполняем
+                # из dict/prefill (канон 'Тамаго-яки'), иначе оно застревает.
+                if cur and _hr_n((e.get("original") or "").strip(), cur):
                     continue
                 en = e.get("original") or ""
                 if not is_translatable_text(en):
                     continue
                 ru, _src = prefilter.lookup(en)
+                # dict-канон имеет приоритет над эхо/старым значением
                 if ru and str(ru).strip() and str(ru).strip().lower() != en.strip().lower():
-                    done[str(e["i"])] = str(ru)
-                    # GAME-PO: авторитетная проверка — есть EN в .po ИГРЫ?
-                    # (пул 'source' ненадёжен: dict.json маскирует game.po)
-                    try:
-                        if prefilter.game_po_has(en):
-                            GAME_SKIP.add(str(e["i"]))
-                    except Exception:
-                        pass
+                    done[i] = str(ru)
+                    if glz.game_localizes(e) or (IGNORE_MOD_DESC and glz.is_mod_description(e)):
+                        GAME_SKIP.add(i)
                     reused += 1
             if reused:
                 log(f"  [no-llm] prefill из локальных источников: {reused} строк")

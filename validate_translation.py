@@ -63,14 +63,25 @@ def is_identifier(s):
         if ("_" in tok) or (any(c.isdigit() for c in tok)):
             return True
         if "-" in tok:
-            # 2026-09-20: дефис — НЕ всегда код. Имена NPC-типа с КАПСОМ
-            # «Ex-Servant», «Anti-Slaver», «No-Face» — ДИСПЛЕЙНЫЕ имена,
-            # пользователь хочет их перевести (LLM). Настоящие коды/кейсы
-            # содержат цифры (KAR-98, house03-base), начинается со строчной
-            # (snake/kebab: anti-aliasing) или underscore — остаёмся ID.
+            # 2026-09-20 (расширено 2026-09-24): дефис — НЕ всегда код.
+            # Имена с КАПСОМ в каждой части (Ex-Servant, No-Face) — ДИСПЛЕЙНЫЕ.
+            # 2026-09-24: и romanized/иероглифические «слова» вида
+            # Tamago-yaki / Omurice / Gyoza (2+ «словесных» части, только буквы,
+            # 2+ буквы каждая, без цифр) — это ДИСПЛЕЙНЫЕ ИМЕНА (в Kenshi —
+            # предметы/блюда/имена), а НЕ идентификаторы: переводимые.
+            # Настоящий код содержит ЦИФРЫ (KAR-98, house03-base) или underscore
+            # (wood_dex_dummy) — остаётся ID.
             parts = [x for x in re.split(r"[-]+", tok) if x]
             if parts and all(x[0].isupper() and x.isalpha() for x in parts):
-                return False   # имя с КАПСоМ — переводим
+                return False   # имя с КАПСОМ — переводим
+            # 2026-09-24: romanized имя (Tamago-yaki): первая часть с ЗАГЛАВНОЙ,
+            # 2+ часть, все буквы без цифр, без underscore — ДИСПЛЕЙНОЕ ИМЯ.
+            # kaba-case ассета (anti-aliasing, base-metal) — первая часть строчная
+            # — остаётся ID (не переводим).
+            if (len(parts) >= 2 and tok[0].isupper()
+                    and all(p.isalpha() and len(p) >= 2 for p in parts)
+                    and "_" not in tok):
+                return False   # romanized display name — переводим
             return True
         # аббревиатура: точки + короткие латинские части (B.T.P., Mk.II)
         if "." in tok:

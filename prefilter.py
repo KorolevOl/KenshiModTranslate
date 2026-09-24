@@ -283,7 +283,6 @@ def game_po_map():
     _game_po_map_cache = out
     return out
 
-
 def game_po_has(en):
     """True if EN has a non-empty RU in the GAME's .po (authoritative check,
     independent of the reuse pool). Cheap memoized per (process) — calls
@@ -291,3 +290,27 @@ def game_po_has(en):
     if not en:
         return False
     return en.lower().strip() in game_po_map()
+
+
+_game_po_refs_cache = None
+def game_po_refs():
+    """Множество record-ссылок «id-module» из ``#:``-строк .по игры (memoized).
+
+    Игра локализирует по OBJECT-ID (не по тексту!): запись
+    50606-BeakThingEggFoods.mod НЕ локализуется, даже если её текст есть в
+    .по (там он привязан к 4029-gamedata.base). GAME-SKIP строится по этому
+    множеству: skip только если recordID МОДА ∈ игра + текст совпадает."""
+    global _game_po_refs_cache
+    if _game_po_refs_cache is not None:
+        return _game_po_refs_cache
+    if not _global_game_po_paths:
+        return set()
+    from textutil import parse_po_refs
+    refs = set()
+    for pth in _global_game_po_paths:
+        try:
+            refs |= parse_po_refs(pth)
+        except Exception:
+            continue
+    _game_po_refs_cache = refs
+    return refs

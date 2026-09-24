@@ -147,6 +147,31 @@ def parse_po_file(path):
         yield en, ru
 
 
+def parse_po_refs(path):
+    """Множество record-ссылок «id-module» из ``#:``-строк .po.
+
+    Игра локализует объекты по OBJECT-ID (не по тексту!):
+    ``#: 4029-gamedata.base`` значит «перевод этой msgid относится к записи
+    4029 из gamedata.base» — и НЕ к записи 50606-BeakThingEggFoods.mod с
+    таким же текстом. Строки вида ``#: 1234-mod.mod:0`` (пустые msgid /
+    поля) нормализуем к ``1234-mod.mod``. Возвращает множество записей."""
+    refs = set()
+    try:
+        fh = open(path, encoding="utf-8", errors="replace")
+    except Exception:
+        return refs
+    with fh:
+        for ln in fh:
+            ln = ln.strip()
+            if not ln.startswith("#:"):
+                continue
+            for tok in ln[2:].split():
+                m = re.match(r"^(\d+)-([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)(?::\d+)?$", tok)
+                if m:
+                    refs.add("%s-%s" % (m.group(1), m.group(2)))
+    return refs
+
+
 def parse_po_file_all(path):
     """Как parse_po_file, но ВСЕ пары (включая msgid==msgstr) для ранжирования.
     Используйте, когда нужно видеть, что строка ВСТРЕЧАЕТСЯ в .po, даже
