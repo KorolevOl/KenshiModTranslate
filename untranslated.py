@@ -143,6 +143,19 @@ def untranslated_stats(mods, state_dir, verbose=None):
             _en_chk = (e.get("original") or "")
             if _en_chk and prefilter.nothing_to_translate(_en_chk):
                 continue
+            # 2026-09-25: строка-идентификатор (ассет-ID, @-флаг, entry-ID) —
+            # переводить нечего, LLM не спросим (see _needs_translation),
+            # и меню её НЕ считает кандидатом. Пример: Empire Banner Retexture
+            # (ретекс) -> i=1 = 'banner_empire_material' под ключом ...mod_name —
+            # это имя материала/записи, а не видимый текст. Меню раньше
+            # показывало 1/1 «непереведено», что было ложью.
+            try:
+                from validate_translation import classify_row as _clr, BAD_FIX_LEVELS  # noqa
+                _lvl = _clr(_en_chk, None)
+                if _en_chk and _lvl not in BAD_FIX_LEVELS:
+                    continue
+            except Exception:
+                pass
             total += 1  # только переводимые строки — в знаменатель
             en = e.get("original") or ""
             if own.get(str(e.get("i"))):
