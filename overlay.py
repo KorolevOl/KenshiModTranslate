@@ -180,7 +180,7 @@ def install(query, mapping_file=None, dry_run=False):
     if name.lower().endswith("rus"):
         print("имя мода уже заканчивается 'RUS' — вероятно, это оверлей. Отказ."); return 1
 
-    ru_name = name + " RUS"
+    ru_name = name + " AI-RUS"
     h = mod_hash(modfile)
     mapping = mapping_file or (os.path.join(STATE, "%s_mapping.json" % h) if h else None)
     if not mapping or not os.path.exists(mapping):
@@ -268,7 +268,9 @@ def uninstall(query):
     if not cands:
         print("мод не найден: %r" % query); return 1
     name = cands[0][2]
-    ru_name = name + " RUS"
+    # 2026-09-26: суффикс AI-RUS (было RUS) — чтобы не клаттится с чужими
+    # Steam-мод переводами «… RUS» (Animal Variations RUS, More Dogs RUS, …).
+    ru_name = name + " AI-RUS"
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     bak = backup_list("uninstall")
     lines = read_lines()

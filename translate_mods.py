@@ -1422,7 +1422,11 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
             modbase = m["name"]
             if modbase.lower().endswith(".mod"):
                 modbase = modbase[: -len(".mod")]
-            ru_name = modbase + " RUS"
+            # 2026-09-26: суффикс AI-RUS (было RUS) — наши оверлеи НЕ должны
+            # калатить имена с чужими Steam-мод переводами ("Animal Variations RUS"
+            # id 2916012529 и др.) — game поднимала чужой поверх наших,
+            # строки из чужого непереведённого перевода "просвечивали" (Dried Prime Meat).
+            ru_name = modbase + " AI-RUS"
             work = os.path.join(r"T:", ".overlay_%s" % m["name"])
             out_mod = os.path.join(work, ru_name + ".mod")
             vjson = os.path.join(work, "v.json")

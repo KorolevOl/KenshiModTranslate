@@ -122,6 +122,15 @@ static List<Entry> ExtractEntries(ModData data)
 static int DoExtract(string modPath, string outJson)
 {
     if (!File.Exists(modPath)) { Console.Error.WriteLine($"mod not found: {modPath}"); return 1; }
+    // 2026-09-26 SAFETY: выходной JSON НИКОГДА не должен писать поверх .mod
+    // (инцидент: неверный 2-й аргумент = путь к .mod → JSON-дамп затирал бинарный мод,
+    //  три файла пострадали; восстановление только по бэкапам).
+    var oj = outJson.Trim();
+    if (oj.EndsWith(".mod", System.StringComparison.OrdinalIgnoreCase))
+    {
+        Console.Error.WriteLine($"REFUSED: outJson '{outJson}' заканчивается .mod — extract пишет JSON, не мод. Укажи .json-файл (2 аргумента: <modfile> <out.json>).");
+        return 2;
+    }
     var re = new ReverseEngineer();
     re.LoadModFile(modPath);
     if (re.modData == null) { Console.Error.WriteLine("no modData parsed"); return 1; }

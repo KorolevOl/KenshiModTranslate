@@ -246,19 +246,20 @@ def classify_row(en, ru):
     en = en or ""
     en_w = words(en)
     en_ph = placeholders(en)
+    # -- предикат-исключения, которые ВАЖНЫ И ДЛЯ ПУСТОГО ПЕРЕВОДА И ДЛЯ ЗАПОЛНЁННОГО --
+    if is_onomatopoeia(en):
+        return "ok"          # звук/возду — переведти нечего (LLM правомерно не дает)
+    if already_russian(en):
+        return "already_ru"  # оригинал и так русский — не фиксим
     # -- пустой/отсутствующий перевод --
     if ru is None or not str(ru).strip():
-        if is_onomatopoeia(en):
-            return "ok"          # звук/возду — переведти нечего (LLM правомерно не дает)
         if is_identifier(en):
             return "identifier"  # asset/entry-ID — не переводится намеренно (Z…Entry, asset name)
         if en_w or en_ph:
             return "empty"
         return "ok"               # обе пустые/только знаки — нечего переводить
     ru = str(ru)
-    # -- оригинал уже русский / идентификатор: не фиксим --
-    if already_russian(en):
-        return "already_ru"
+    # -- (уже проверено выше: onomatopoeia/already_ru) --
     if is_identifier(en):
         return "identifier"
     # 2026-09-20: крики/звуки (onomatopoeia) — LLM может вернуть:
