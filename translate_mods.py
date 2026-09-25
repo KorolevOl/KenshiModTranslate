@@ -1306,6 +1306,36 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
     if filled == 0:
         log("  [!] ничего не переведено - НЕ применяю (оригинальный .mod не тронут)")
         return False
+    # --- 2026-09-25: AUTO-FILL из официального RU .po ИГРЫ (без game-po правки, без dict.json, без ручного CSV) ---
+    # Если LLM/quality-gate оставил строку пустой, а в игре этот EN-текст уже
+    # локализован (gamedata.po / main.po) — подставляем официальный RU.
+    # Точное совпадение EN (без case-matching) — только «в лоб», не гадание.
+    try:
+        import prefilter as _pf
+        _gpo = _pf.game_po_map()  # {en_lower: ru}
+        if _gpo:
+            _filled_gp = 0
+            for e in entries:
+                _i = str(e.get("i"))
+                _en = (e.get("original") or "").strip()
+                _ru = (done.get(_i) or "").strip()
+                if _en and not _ru and _en.lower() in _gpo:
+                    _official = _gpo[_en.lower()].strip()
+                    if _official:
+                        done[_i] = _official
+                        _filled_gp += 1
+                        log(f"  [game-po autofill] i={e.get('i')}: {_en[:48]!r} → {_official[:48]!r}")
+            if _filled_gp:
+                log(f"  [game-po autofill] +{_filled_gp} строк из официального RU .po игры (закрыто дыр)")
+                filled = sum(1 for v in done.values() if v and str(v).strip())
+                _n_cand2 = sum(1 for e in entries if str(e["i"]) not in GAME_SKIP)
+                unfilled2 = _n_cand2 - filled
+                log(f"  [coverage] после autofill: {filled}/{_n_cand2}"
+                    + (f"  ({unfilled2} ещё пропущено)" if unfilled2 else ""))
+    except Exception as _ex:
+        log(f"  [game-po autofill] ошибка (не фатально): {_ex}")
+    # --- END AUTO-FILL ---
+
     # --- финальный аудит (без LLM): есть ли РЕАЛЬНО валидные переводы? ---
     # audit_map (единый источник = classify_row): filled = валидные (ok + уже-русские +
     # идентификаторы), а echo/latin/ph_lost/empty — непересекающиеся проблемные классы.
