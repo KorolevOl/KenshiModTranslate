@@ -360,8 +360,10 @@ def _mixed_script_words(s, en=None):
     def _core_norm(t):
         # первая буква + длина: для совпадения «MкI» == «MkI» == «МkI»
         t_norm = t.translate(_TRANSLIT).lower()
-        # убираем цифры/точки (MkI → mk, MkII → mk) для core-совпадения
-        return re.sub(r"[0-9.\-_]", "", t_norm)
+        # убираем ВСЁ кроме букв (MкI. → мкi, MkI, → мки): точки, запятые
+        # (ASCII и кириллическая U+04A9), дефисы, цифры, римские цифры.
+        # (2026-09-25: «Старый балет МкI.» с точкой и пунктуация в EN)
+        return re.sub(r"[^a-z\u0400-\u04ff]", "", t_norm)
     _en_cores = set()
     if en:
         for w in en.split():
