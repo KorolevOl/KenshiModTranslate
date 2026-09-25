@@ -1996,8 +1996,31 @@ def main():
         if not mods:
             log(f"все моды в выбранной группе ({scope_lbl}) в исключениях — нечего делать")
             return 1
+        # 2026-09-26: сколько реально нужно LLM vs уже в кеше — чтобы
+        # «перевести ВСЕ» не пугало: все уже переведённые НЕ будут
+        # запускаться заново (каждый их строк берётся из state-кеша,
+        # LLM не спрашивается).
+        import hashlib as _hl
+        def _cached(m):
+            try:
+                src = m["modfile"]; base = os.path.basename(src); d = os.path.dirname(src)
+                for f in os.listdir(d):
+                    if f.startswith(base + ".orig_") and f.endswith(".backup"):
+                        h = f[len(base) + 6:-len(".backup")]
+                        if os.path.isfile(os.path.join(STATE, h + "_mapping.json")):
+                            return True
+                h = _hl.md5(open(src, "rb").read()).hexdigest()[:12]
+                return os.path.isfile(os.path.join(STATE, f"{h}_mapping.json"))
+            except Exception:
+                return False
+        n_cached = sum(1 for m in mods if _cached(m))
+        n_fresh = len(mods) - n_cached
         log(f"[?] список мода не указан. {len(mods)} eligible ({scope_lbl}); {len(skipped_excl)} в исключениях.")
-        log("    перевести ВСЕ? Одна LLM-полоса, 200+ модов - долго.")
+        if n_cached:
+            log(f"    из них уже переведено (кэш, LLM НЕ будет спрашиваться): {n_cached}")
+            log(f"    реально пойдёт к LLM: {n_fresh} (только непереведённые строки)")
+        else:
+            log(f"    перевести ВСЕ? Одна LLM-полоса, {n_fresh} модов — долго.")
         ans = input("    Перевести все [y/N]: ").strip().lower()
         if ans not in ("y", "yes", "д", "да"):
             log("    прерываю (ничего не выбрано)")
