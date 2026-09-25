@@ -2,87 +2,334 @@
   "schema_version": 2,
   "diagram_type": "workflow",
   "meta": {
-    "title": "Kenshi RU — конвейер перевода модов (v1.8+)",
-    "subtitle": "Workshop-моды → RU-оверлей (EN-оригинал не трогается) · встроенные → in-place + бэкап рядом",
+    "title": "Kenshi RU — конвейер перевода модов (v2.1)",
+    "subtitle": "Workshop → отдельный RU-оверлей (EN-оригинал не трогается) · строки игры берёт .po — не переводим · повторный запуск дожимает непереведённое",
     "animation": "trace",
     "visual_preset": "signal-flow",
-    "quality_profile": "standard",
+    "quality_profile": "showcase",
     "views": [
       {
         "id": "full-path",
         "label": "Полный конвейер",
-        "focus": ["user", "entry", "extract", "prefilter", "cache", "llm", "apply", "overlay", "game"],
-        "note": "От запуска .bat до русской строки в игре: извлечение, кэш, LLM, сборка."
+        "focus": [
+          "user",
+          "entry",
+          "extract",
+          "prefilter",
+          "cache",
+          "llm",
+          "apply",
+          "overlay",
+          "game"
+        ],
+        "note": "От запуска .bat до русской строки в игре: извлечение, отбор по object-ID, кэш/LLM, сборка оверлея."
       },
       {
         "id": "cache-hit",
-        "label": "Повторный перевод (кэш)",
-        "focus": ["prefilter", "cache", "apply", "overlay", "game"],
-        "note": "Кэш-хит: LLM не зовётся, перевод берётся из state/ — дёшево и мгновенно."
+        "label": "Повторный запуск (кэш)",
+        "focus": [
+          "prefilter",
+          "cache",
+          "apply",
+          "overlay",
+          "game"
+        ],
+        "note": "Кэш-хит + словари: LLM не зовётся, непереведённое дожимается. Безопасен — state/ хранит прогресс."
       },
       {
-        "id": "outputs",
-        "label": "Три способа вывода",
-        "focus": ["apply", "overlay", "inplace", "csv", "game"],
-        "note": "Workshop → отдельный RU-оверлей; встроенные → в место (бэкап рядом); CSV → правка в Excel."
+        "id": "game-po-skip",
+        "label": "Строки игры — не трогаем",
+        "focus": [
+          "prefilter",
+          "apply",
+          "overlay",
+          "game"
+        ],
+        "note": "Ряды, которые есть в .po игры (ru_RU), пропускаем: игра нарисует сама. В кэш/CSV/оверлей не записываем."
+      },
+      {
+        "id": "full-clean",
+        "label": "Полная очистка (v2.1)",
+        "focus": [
+          "user",
+          "entry",
+          "revert",
+          "csv",
+          "overlay",
+          "game"
+        ],
+        "note": "--full-clean: revert EN (MD5-проверка) → оверлеи в контейнер → CSV/кэш/бэкапы. --keep-backups — бэкапы оставить."
       }
     ],
     "legend": {
       "mode": "auto",
       "entries": {
-        "frontend": { "label": "Вход" },
-        "backend": { "label": "Конвейер" },
-        "database": { "label": "Хранилище" },
-        "cloud": { "label": "LLM" },
-        "security": { "label": "Защита / in-place" },
-        "external": { "label": "Вне системы" }
+        "frontend": {
+          "label": "Вход"
+        },
+        "backend": {
+          "label": "Конвейер"
+        },
+        "database": {
+          "label": "Хранилище"
+        },
+        "cloud": {
+          "label": "LLM"
+        },
+        "security": {
+          "label": "Защита / откат"
+        },
+        "external": {
+          "label": "Вне системы"
+        }
       }
     }
   },
   "lanes": [
-    { "id": "input", "label": "1. Вход — пользователь" },
-    { "id": "pipeline", "label": "2. Конвейер — Python + C# (cli.py)" },
-    { "id": "store", "label": "3. ИИ и хранилище" },
-    { "id": "output", "label": "4. Результат — в игру" }
+    {
+      "id": "input",
+      "label": "1. Вход — пользователь"
+    },
+    {
+      "id": "pipeline",
+      "label": "2. Конвейер — Python + C#"
+    },
+    {
+      "id": "store",
+      "label": "3. ИИ и хранилище"
+    },
+    {
+      "id": "output",
+      "label": "4. Результат — в игру"
+    }
   ],
   "phases": [
-    { "id": "intake", "label": "Вход", "fromCol": 0, "toCol": 1 },
-    { "id": "translate", "label": "Перевод", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
-    { "id": "build", "label": "Сборка и вывод", "fromCol": 5, "toCol": 5 }
+    {
+      "id": "intake",
+      "label": "Вход",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "translate",
+      "label": "Перевод",
+      "fromCol": 2,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "build",
+      "label": "Сборка и вывод",
+      "fromCol": 5,
+      "toCol": 5
+    }
   ],
   "groups": [
-    { "id": "overlay_out", "label": "Workshop: EN-оригинал не трогается", "lane": "output", "fromCol": 3, "toCol": 4, "variant": "emphasis" },
-    { "id": "inplace_out", "label": "kenshi\\data: in-place + бэкап рядом", "lane": "output", "fromCol": 3, "toCol": 3, "variant": "security" }
+    {
+      "id": "overlay_out",
+      "label": "Workshop: EN-оригинал не трогается",
+      "lane": "output",
+      "fromCol": 3,
+      "toCol": 5,
+      "variant": "emphasis"
+    }
   ],
-  "mainPath": ["user", "entry", "extract", "prefilter", "cache", "llm", "apply", "overlay", "game"],
+  "mainPath": [
+    "user",
+    "entry",
+    "extract",
+    "prefilter",
+    "cache",
+    "llm",
+    "apply",
+    "overlay",
+    "game"
+  ],
   "nodes": [
-    { "id": "user", "lane": "input", "col": 0, "type": "external", "label": "Пользователь", "sublabel": ".bat / python CLI", "width": 130 },
-    { "id": "entry", "lane": "input", "col": 1, "type": "frontend", "label": "Точки входа", "sublabel": "translate · search · verify", "width": 130 },
-    { "id": "extract", "lane": "pipeline", "col": 2, "type": "backend", "label": "Извлечение", "sublabel": "Program.cs extract → EN", "width": 130 },
-    { "id": "prefilter", "lane": "pipeline", "col": 3, "type": "security", "label": "Предфильтр", "sublabel": "skip · reuse · game-skip", "width": 130 },
-    { "id": "apply", "lane": "pipeline", "col": 4, "type": "backend", "label": "Сборка", "sublabel": "Program.cs apply + dict.json", "width": 130 },
-    { "id": "cache", "lane": "store", "col": 3, "type": "database", "label": "Кэш state/", "sublabel": "hits / miss по строкам", "width": 130 },
-    { "id": "llm", "lane": "store", "col": 4, "type": "cloud", "label": "LLM (любой API)", "sublabel": "EN → RU, словарь в промпте", "width": 130 },
-    { "id": "dict", "lane": "store", "col": 5, "type": "database", "label": "Словари", "sublabel": "dict.json · exclude.txt", "width": 130 },
-    { "id": "csv", "lane": "output", "col": 2, "type": "database", "label": "CSV ↔ Excel", "sublabel": "<имя>.translate.csv", "width": 130 },
-    { "id": "inplace", "lane": "output", "col": 3, "type": "security", "label": "In-place", "sublabel": "бэкап .orig_<hash>.backup", "width": 130 },
-    { "id": "overlay", "lane": "output", "col": 4, "type": "backend", "label": "RU-оверлей", "sublabel": "<имя> RUS/<имя> RUS.mod", "width": 140 },
-    { "id": "game", "lane": "output", "col": 5, "type": "external", "label": "Игра Kenshi", "sublabel": "__mods.list → RU-строки", "width": 130 }
+    {
+      "id": "user",
+      "lane": "input",
+      "col": 0,
+      "type": "external",
+      "label": "Пользователь",
+      "sublabel": ".bat / python CLI",
+      "width": 120
+    },
+    {
+      "id": "entry",
+      "lane": "input",
+      "col": 1,
+      "type": "frontend",
+      "label": "Точки входа",
+      "sublabel": "translate · search · revert",
+      "width": 150
+    },
+    {
+      "id": "extract",
+      "lane": "pipeline",
+      "col": 2,
+      "type": "backend",
+      "label": "Извлечение",
+      "sublabel": "Program.cs → строки EN",
+      "width": 140
+    },
+    {
+      "id": "prefilter",
+      "lane": "pipeline",
+      "col": 3,
+      "type": "security",
+      "label": "Отбор по object-ID",
+      "sublabel": "game-po · skip · reuse",
+      "width": 160
+    },
+    {
+      "id": "apply",
+      "lane": "pipeline",
+      "col": 4,
+      "type": "backend",
+      "label": "Сборка apply",
+      "sublabel": "Program.cs + dict.json",
+      "width": 140
+    },
+    {
+      "id": "cache",
+      "lane": "store",
+      "col": 3,
+      "type": "database",
+      "label": "Кэш state/",
+      "sublabel": "entries · mapping · resume",
+      "width": 150
+    },
+    {
+      "id": "llm",
+      "lane": "store",
+      "col": 4,
+      "type": "cloud",
+      "label": "LLM (любой API)",
+      "sublabel": "EN → RU · словарь в промпте",
+      "width": 150
+    },
+    {
+      "id": "csv",
+      "lane": "store",
+      "col": 5,
+      "type": "database",
+      "label": "CSV ↔ Excel",
+      "sublabel": "<имя>.translate.csv",
+      "width": 150
+    },
+    {
+      "id": "revert",
+      "lane": "output",
+      "col": 2,
+      "type": "security",
+      "label": "Откат / full-clean",
+      "sublabel": "EN из .orig-бэкапа (MD5) · v2.1: бэкапы удалить",
+      "width": 210
+    },
+    {
+      "id": "overlay",
+      "lane": "output",
+      "col": 4,
+      "type": "backend",
+      "label": "RU-оверлей",
+      "sublabel": "<имя> RUS/<имя> RUS.mod",
+      "width": 160
+    },
+    {
+      "id": "game",
+      "lane": "output",
+      "col": 5,
+      "type": "external",
+      "label": "Игра Kenshi",
+      "sublabel": "__mods.list → RU-строки",
+      "width": 150
+    }
   ],
   "edges": [
-    { "id": "u-e", "from": "user", "to": "entry", "variant": "default" },
-    { "id": "e-x", "from": "entry", "to": "extract", "variant": "default" },
-    { "id": "x-p", "from": "extract", "to": "prefilter", "variant": "default" },
-    { "id": "p-c", "from": "prefilter", "to": "cache", "label": "спросить кэш", "variant": "default" },
-    { "id": "c-llm", "from": "cache", "to": "llm", "label": "miss", "variant": "dashed", "role": "branch" },
-    { "id": "llm-a", "from": "llm", "to": "apply", "label": "RU-строки", "variant": "emphasis" },
-    { "id": "c-a", "from": "cache", "to": "apply", "label": "hit — без LLM", "variant": "emphasis", "role": "return" },
-    { "id": "dict-a", "from": "dict", "to": "apply", "label": "dict.json", "variant": "dashed" },
-    { "id": "a-o", "from": "apply", "to": "overlay", "label": "Workshop", "variant": "emphasis" },
-    { "id": "a-i", "from": "apply", "to": "inplace", "label": "kenshi\\data", "variant": "security" },
-    { "id": "a-csv", "from": "apply", "to": "csv", "label": "экспорт", "variant": "dashed" },
-    { "id": "csv-o", "from": "csv", "to": "overlay", "label": "overlay install", "variant": "dashed", "role": "branch" },
-    { "id": "o-g", "from": "overlay", "to": "game", "variant": "emphasis" },
-    { "id": "i-g", "from": "inplace", "to": "game", "variant": "default" }
+    {
+      "id": "u-e",
+      "from": "user",
+      "to": "entry",
+      "variant": "default"
+    },
+    {
+      "id": "e-x",
+      "from": "entry",
+      "to": "extract",
+      "variant": "default"
+    },
+    {
+      "id": "x-p",
+      "from": "extract",
+      "to": "prefilter",
+      "variant": "default"
+    },
+    {
+      "id": "p-c",
+      "from": "prefilter",
+      "to": "cache",
+      "label": "спросить кэш",
+      "variant": "default"
+    },
+    {
+      "id": "c-llm",
+      "from": "cache",
+      "to": "llm",
+      "label": "miss",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "llm-a",
+      "from": "llm",
+      "to": "apply",
+      "label": "RU-строки",
+      "variant": "emphasis"
+    },
+    {
+      "id": "c-a",
+      "from": "cache",
+      "to": "apply",
+      "label": "hit — без LLM",
+      "variant": "emphasis",
+      "role": "return"
+    },
+    {
+      "id": "a-csv",
+      "from": "apply",
+      "to": "csv",
+      "label": "экспорт",
+      "variant": "dashed"
+    },
+    {
+      "id": "a-o",
+      "from": "apply",
+      "to": "overlay",
+      "label": "Workshop",
+      "variant": "emphasis"
+    },
+    {
+      "id": "csv-o",
+      "from": "csv",
+      "to": "overlay",
+      "label": "overlay install",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "o-g",
+      "from": "overlay",
+      "to": "game",
+      "variant": "emphasis"
+    },
+    {
+      "id": "r-o",
+      "from": "revert",
+      "to": "overlay",
+      "label": "full-clean: убрать",
+      "variant": "dashed",
+      "role": "branch"
+    }
   ]
 }
