@@ -136,6 +136,13 @@ def untranslated_stats(mods, state_dir, verbose=None):
             # RUS-моде. Тогда инвариант: терминал == CSV == RUS-мод.
             if not _glz.should_translate(e, _ign_desc):
                 continue  # не кандидат — вообще в счёте не участвует
+            # 2026-09-25: строка, у которой НЕТЧЕГО ПЕРЕВОДИТЬ (чистая
+            # пунктуация, только цифры, пустая, уже русская), НЕ кандидат.
+            # В translate_mods её не шлём в LLM (nothing_to_translate); меню
+            # должно считать её «не в списке» тоже — иначе ложный «непереведено».
+            _en_chk = (e.get("original") or "")
+            if _en_chk and prefilter.nothing_to_translate(_en_chk):
+                continue
             total += 1  # только переводимые строки — в знаменатель
             en = e.get("original") or ""
             if own.get(str(e.get("i"))):

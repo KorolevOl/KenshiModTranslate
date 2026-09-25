@@ -692,9 +692,11 @@ def translate_entries(entries, done_map, name, ctx, todo_scope=None):
                 continue
             if prefilter.nothing_to_translate(en):
                 n_passthrough += 1
-                # 2026-09-22: passthrough (RU=EN) НЕ пишем в кэш — строка
-                # «ничего не переводить»: кириллица/знаки/CJK/пусто. В .mod
-                # оригинал и так останется (строка без перевода не меняется).
+                # 2026-09-25: passthrough (чистая пунктуация/цифры/кириллица/пусто)
+                # — НЕ КАНДИДАТ. Добавляем в GAME_SKIP, чтобы строка не
+                # учитывалась в знаменателе «N/M» меню (иначе ложный
+                # «непереведено» на строках вроде '...' без латыни).
+                GAME_SKIP.add(str(e.get("i")))
                 continue
             ru, src = prefilter.lookup(en)
             if ru:
