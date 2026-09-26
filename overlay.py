@@ -308,7 +308,8 @@ def list_installed():
     cfgset = set(l.lower() for l in _cfg_lines()) if os.path.exists(MODS_CFG) else set()
     found = 0
     for f in sorted(os.listdir(MODS_DIR)):
-        if f.endswith(" RUS") and os.path.isdir(os.path.join(MODS_DIR, f)):
+        fl = f.lower().rstrip()
+        if (fl.endswith(" ai-rus") or fl.endswith(" rus")) and os.path.isdir(os.path.join(MODS_DIR, f)):
             modf = [x for x in os.listdir(os.path.join(MODS_DIR, f)) if x.endswith(".mod")]
             enabled = any(l.lower() in ((f + ".mod").lower(), f.lower()) for l in cfgset)
             seen = f in inlist

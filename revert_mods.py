@@ -258,10 +258,16 @@ def full_clean(dry_run=False, assume_yes=False, keep_backups=False):
         # status != ok → backup оставляем (EN не восстановлен)
 
     # ---------- B) RUS-оверлеи: registry + каталоги ----------
+    def _is_our_overlay(name: str) -> bool:
+        n = (name or "").lower().rstrip()
+        # 2026-09-26: суффикс « AI-RUS» (новый) и « RUS» (старый, на случай неполной миграции) —
+        # ОБА считаются нашими оверлеями.
+        return n.endswith(" ai-rus") or n.endswith(" rus")
+
     rus_dirs = []
     if os.path.isdir(MODS_DIR):
         rus_dirs = [d for d in sorted(os.listdir(MODS_DIR))
-                    if d.lower().rstrip().endswith(" rus")
+                    if _is_our_overlay(d)
                     and os.path.isdir(os.path.join(MODS_DIR, d))]
     if not rus_dirs:
         print("  оверлеев RUS не найдено (B) — пропускаю")
@@ -279,7 +285,7 @@ def full_clean(dry_run=False, assume_yes=False, keep_backups=False):
                 f.write("\n".join(list_lines) + "\n")
             with open(GAME_LIST, "w", encoding="utf-8") as f:
                 f.write("\n".join(keep) + "\n")
-        print(f"  [B.1] __mods.list: {dropped_list} строк ' RUS' "
+        print(f"  [B.1] __mods.list: {dropped_list} строк ' RUS / AI-RUS' "
               + ("would be removed" if dry_run else "удалено (бэкап рядом)"))
         # --- B.2 mods.cfg ---
         cfg_lines = []
@@ -301,7 +307,7 @@ def full_clean(dry_run=False, assume_yes=False, keep_backups=False):
                 f.write("\n".join(cfg_lines) + "\n")
             with open(MODS_CFG, "w", encoding="utf-8") as f:
                 f.write("\n".join(cfg_keep) + "\n")
-        print(f"  [B.2] mods.cfg: {dropped_cfg} строк ' RUS' "
+        print(f"  [B.2] mods.cfg: {dropped_cfg} строк ' RUS / AI-RUS' "
               + ("would be removed" if dry_run else "удалено (бэкап рядом)"))
         # --- B.3 каталоги → контейнер ---
         for d in rus_dirs:

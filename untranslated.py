@@ -94,9 +94,10 @@ def untranslated_stats(mods, state_dir, verbose=None):
         if not (mf and os.path.exists(mf)):
             out.append((m, 0, 0))
             continue
-        # 2026-09-24: RU-оверлеи (<имя> RUS) — производные наших переводов:
+        # 2026-09-24: RU-оверлеи (<имя> RUS / <имя> AI-RUS) — производные наших переводов:
         # их текст УЖЕ русский. В список «нужно перевести» они НЕ входят.
-        if (m.get("name") or "").strip().lower().endswith(" rus"):
+        _nm = (m.get("name") or "").strip().lower()
+        if _nm.endswith(" rus") or _nm.endswith(" ai-rus"):
             out.append((m, 0, 0))
             continue
         h = _md5_file(mf)
