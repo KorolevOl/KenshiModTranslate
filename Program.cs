@@ -18,10 +18,13 @@ try
 {
     switch (args[0])
     {
+        case "dump":
+            if (args.Length < 3) { Console.Error.WriteLine("usage: kenshi-modtranslate dump <mod> <out.json>"); return 2; }
+            return DoDump(args[1], args[2]);
         case "extract": return DoExtract(args[1], args[2]);
         case "apply":
-            if (args.Length >= 4) return DoApply(args[1], args[2], args[3], args.Length >= 5 ? args[4] : null);
-            Console.Error.WriteLine("apply needs 3 args [optional 4th: keep-only record-id substring]"); return 2;
+            if (args.Length >= 4) return DoApply(args[1], args[2], args[3], args.Length >= 5 ? args[4] : null, args.Length >= 6 ? args[5] : null);
+            Console.Error.WriteLine("apply needs 3 args [optional 4th: keep-only record-id substring] [optional 5th: extra base-mod dependency]"); return 2;
         default:
             Console.Error.WriteLine($"unknown verb: {args[0]}");
             return 2;
@@ -119,6 +122,57 @@ static List<Entry> ExtractEntries(ModData data)
     return entries;
 }
 
+static int DoDump(string modPath, string outJson)
+{
+    if (!File.Exists(modPath)) { Console.Error.WriteLine("mod not found: " + modPath); return 1; }
+    var re = new ReverseEngineer();
+    re.LoadModFile(modPath);
+    var d = re.modData;
+    if (d == null) { Console.Error.WriteLine("no modData"); return 1; }
+    // Serialize the record essentials
+    List<object> recs = new();
+    if (d.Records != null)
+        foreach (var r in d.Records)
+            recs.Add(new
+            {
+                stringId = r.StringId,
+                name = r.Name,
+                recordType = r.RecordType,
+                changeType = r.ChangeType,
+                stringFields = r.StringFields,
+            });
+    string deps = null, refs = null, author = null;
+    string mergeInfo = null;
+    try
+    {
+        deps = string.Join(" | ", re.getDependencies());
+        refs = string.Join(" | ", re.getReferences());
+        author = d.Header?.Author;
+        int mc = d.Header?.MergeEntries?.Count ?? 0;
+        int dc = d.Header?.DeleteRequests?.Count ?? 0;
+        mergeInfo = $"SaveCount={d.Header?.SaveCount} LastMerge={d.Header?.LastMerge} MergeEntries={mc} DeleteRequests={dc} DetailsLen={d.Header?.DetailsLength}";
+    } catch { }
+    var obj = new
+    {
+        fileType = d.Header?.FileType,
+        description = d.Header?.Description,
+        dependencies = deps,
+        references = refs,
+        author,
+        v17meta = mergeInfo,
+        recordCount = d.Records?.Count,
+        records = recs,
+    };
+    var json = JsonSerializer.Serialize(obj, new JsonSerializerOptions
+    {
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        WriteIndented = false
+    });
+    File.WriteAllText(outJson, json, new UTF8Encoding(false));
+    Console.Error.WriteLine($"dump: {d.Records?.Count} records -> {outJson}");
+    return 0;
+}
+
 static int DoExtract(string modPath, string outJson)
 {
     if (!File.Exists(modPath)) { Console.Error.WriteLine($"mod not found: {modPath}"); return 1; }
@@ -152,7 +206,7 @@ static int DoExtract(string modPath, string outJson)
     return 0;
 }
 
-static int DoApply(string modPath, string mappingJson, string outMod, string? keepOnly = null)
+static int DoApply(string modPath, string mappingJson, string outMod, string? keepOnly = null, string? extraDep = null)
 {
     if (!File.Exists(modPath)) { Console.Error.WriteLine($"mod not found: {modPath}"); return 1; }
     if (!File.Exists(mappingJson)) { Console.Error.WriteLine($"mapping not found: {mappingJson}"); return 1; }
@@ -231,10 +285,26 @@ static int DoApply(string modPath, string mappingJson, string outMod, string? ke
         var field = rest.Substring(us + 1);
         var record = records.FirstOrDefault(r => r.StringId == idPart);
         if (record == null) continue;
-        if (field == "name") { record.Name = trans; applied++; }
+        if (field == "name")
+        {
+            record.Name = trans;
+            // (2026-09-29) fix: в v17 запись со статусом "new" (низкий ниббл == 0)
+            // не имеет права переопределять ИМЯ — движок игнорирует name, но
+            // пропускает stringFields (description). Рабочие community-оверлеи
+            // (MD RUS ct=35/51 | BGS Rus ct=211/451/499/515) выставляют
+            // низкий ниббл status = 3 = "existing + name-changed".
+            // 98 RU-имён MD RUS == ровно 98 записей со status 3 (корреляция 100%).
+            // Устанавливаем ниббл 3 напрямую (SetRecordStatus для v17 "new"
+            // блокирует transition on guard), сохраняя change-counter и high bits.
+            record.ChangeType = (record.ChangeType & ~0xF) | 0x3;
+            applied++;
+        }
         else if (record.StringFields != null && record.StringFields.ContainsKey(field))
         { record.StringFields[field] = trans; applied++; }
     }
+
+    if (extraDep != null && extraDep.Trim().Length > 0)
+        re.addDependencies(new List<string> { extraDep.Trim() });
 
     Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outMod))!);
     re.SaveModFile(outMod);
