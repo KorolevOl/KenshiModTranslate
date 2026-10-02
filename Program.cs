@@ -236,6 +236,12 @@ static int DoApply(string modPath, string mappingJson, string outMod, string? ke
     // description). Python строит список из mapping (i → entries[i].key).
     if (keepOnlyActive)
     {
+        // keepOnly может быть путём к .json-файлу (обход лимита аргумента cmd-line)
+        if (keepOnly.EndsWith(".json", StringComparison.OrdinalIgnoreCase) && File.Exists(keepOnly))
+        {
+            Console.Error.WriteLine($"keepOnly: читаю из файла {keepOnly}");
+            keepOnly = File.ReadAllText(keepOnly, Encoding.UTF8).Trim();
+        }
         int before = records.Count;
         if (keepOnly.TrimStart().StartsWith("["))
         {

@@ -1453,7 +1453,14 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
                     if _id not in _seen_ids:
                         _seen_ids.add(_id)
                         _kept_ids.append(_id)
-            keep_only_arg = json.dumps(_kept_ids) if _kept_ids else modbase
+            if _kept_ids:
+                # Обход WinError 206: не передаём 100 КБ+ как аргумент cmd-line — пишем в файл
+                ko_path = "T:/keeponly_%s.json" % modbase
+                with open(ko_path, "w", encoding="utf-8") as _ko:
+                    json.dump(_kept_ids, _ko)
+                keep_only_arg = ko_path
+            else:
+                keep_only_arg = modbase
             log(f"  [overlay] keepOnly: {len(_kept_ids)} record-id из RU-кэша "
                 + ("" if _kept_ids else "(RU-строк нет — fallback на имя мода)")
                 + f"  [цель: N терминала == N CSV == N RUS-мода]")
