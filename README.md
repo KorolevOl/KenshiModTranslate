@@ -183,9 +183,9 @@ Workshop-мод (EN)               RU-оверлей
 | Поиск фразы во всех модах и `.po` | `./search_mods.bat "фраза"` (EN→RU, если уже переведён, видно) |
 | **Откатить RU-оверлей** (Workshop) | `python overlay.py uninstall "имя"` |
 | **Список установленных оверлеев** | `python overlay.py list` |
-| Откатить в-place (встроенные / `--in-place`) | `./revert_mods.bat "имя"` |
-| Откатить в-place + вычистить кэш/CSV | `./revert_mods.bat --clean "имя"` |
-| Откатить все в-place моды (y/N) | `./revert_mods.bat` |
+| Откатить в-place (встроенные / `--in-place`) **+ снять AI-RUS-оверлей мода** | `./revert_mods.bat "имя"` |
+| Откатить в-place + снять оверлей + вычистить кэш/CSV | `./revert_mods.bat --clean "имя"` |
+| Откатить все в-place моды + снести все AI-RUS-оверлеи (y/N) | `./revert_mods.bat` |
 | Показать, что можно откатить | `./revert_mods.bat --list` |
 | По списку модов из файла | `./revert_mods.bat --list-file my_mods.txt` |
 | Откатить любой .mod по пути | `./revert_mods.bat --file "E:\path\rebirth.mod"` |

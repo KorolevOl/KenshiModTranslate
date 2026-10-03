@@ -15,6 +15,11 @@
   • <имя>.mod.orig_<hash>.backup (EN) → <имя>.mod
   • если MD5 бэкапа == MD5 текущего .mod — считаем, что уже оригинал, skip
   • .translate.csv / .prev / state-кеш НЕ трогаем (для повторного перевода)
+  • 2026-10-03: AI-RUS/RUS-оверлеи откатанного мода СНИМАЮТСЯ автоматически:
+    строки «<имя> AI-RUS» из data\\__mods.list и data\\mods.cfg (бэкап
+    .revertover_<ts>.bak рядом) + каталог kenshi\\mods\\<имя> AI-RUS →
+    контейнер kenshi\\_kmt_revert_overlays_<ts>\\ (обратимо, НЕ удаление).
+    Моды со статусом ERR (EN не восстановлен) — их оверлеи НЕ трогаем.
 
 Возврат: 0 = ок/пропуск, 1 = ошибка, 2 = арг.ошибка, 3 = нет мода/бэкапа.
 ПОЛНАЯ ОЧИСТКА (2026-09-24, расширено 2026-09-25):
@@ -162,6 +167,86 @@ def list_orphan_dir(mod):
     except OSError:
         files = []
     return files
+
+
+def unhook_overlays_for(mnames, dry_run=False):
+    """2026-10-03: revert_mods.bat БЕЗ флагов уже должно уносить AI-RUS-оверлеи.
+
+    Для каждого откатанного мода:
+      (a) найти его оверлей <имя> AI-RUS (или legacy « RUS») в:
+          kenshi\\mods\\<имя> AI-RUS\\ (каталог) и/или строки «<имя> AI-RUS(\\.mod)?»
+          в data\\__mods.list и data\\mods.cfg;
+      (b) строки registry → удалить (бэкап .revertover_<ts>.bak рядом, обратимо);
+      (c) каталог overlay — перенести в kenshi\\_kmt_revert_overlays_<ts>\\ (НЕ mdel,
+          обратимо — то же, что делает --full-clean в B.3).
+
+    Ничего не трогает при dry_run. Возврат: 0 всегда (ошибки логируются, не критичны).
+    """
+    import kmt_paths as kp
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    GAME = kp.resolve(CFG["paths"]["game"])
+    MODS_DIR = os.path.join(GAME, "mods")
+    GAME_LIST = os.path.join(GAME, "data", "__mods.list")
+    MODS_CFG = os.path.join(GAME, "data", "mods.cfg")
+    container = os.path.join(GAME, "_kmt_revert_overlays_" + ts)
+
+    def _norm(s):
+        s = (s or "").strip().lower()
+        if s.endswith(".mod"):
+            s = s[:-4]
+        return s
+
+    # набор «имя оверлея» по базовым именам модов (нормализованные)
+    overlay_names = set()
+    for nm in mnames:
+        for suf in (" ai-rus", " rus"):
+            overlay_names.add(_norm(nm) + suf)
+
+    def _line_is_overlay(line):
+        s = _norm(line)
+        return any(s == on or s.startswith(on + "-") for on in overlay_names)
+
+    # ---- (a+b) registry: __mods.list + mods.cfg ----
+    n_drop = 0
+    for reg in (GAME_LIST, MODS_CFG):
+        if not os.path.isfile(reg):
+            continue
+        try:
+            with open(reg, "r", encoding="utf-8-sig") as f:
+                lines = [l.rstrip("\r\n") for l in f]
+        except OSError:
+            continue
+        keep = [l for l in lines if not _line_is_overlay(l)]
+        dropped = len(lines) - len(keep)
+        if not dropped:
+            continue
+        n_drop += dropped
+        if not dry_run:
+            with open(reg + f".revertover_{ts}.bak", "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+            with open(reg, "w", encoding="utf-8") as f:
+                f.write("\n".join(keep) + "\n")
+        print("  overlay-reg: " + os.path.basename(reg) +
+              (f": {dropped} строк" if not dry_run else f" — {dropped} строк (dry-run)"))
+
+    # ---- (c) каталоги overlay → контейнер ----
+    n_moved = 0
+    if os.path.isdir(MODS_DIR):
+        for d in sorted(os.listdir(MODS_DIR)):
+            dp = os.path.join(MODS_DIR, d)
+            if not (os.path.isdir(dp) and _norm(d) in overlay_names):
+                continue
+            if dry_run:
+                print(f"  overlay: {d} → {os.path.basename(container)} (dry-run)")
+            else:
+                os.makedirs(container, exist_ok=True)
+                dst = os.path.join(container, d)
+                if os.path.isdir(dst):
+                    dst += f"_{int(datetime.datetime.now().timestamp())}"
+                shutil.move(dp, dst)
+                print(f"  [MOVED] overlay: {d} → {os.path.basename(container)}")
+            n_moved += 1
+    return n_drop, n_moved
 
 
 def clean_orphans(mods, dry_run=False):
@@ -628,7 +713,35 @@ def main():
         else:
             fail += 1
     print(f"\nИтого: откатано {ok}, пропущено {skip}, ошибок {fail}"
-          + (f", кэш+CSV: {n_cleaned_total} файлов " + ("было бы удалено" if dry_run else "удалено") if clean else ""))
+          + (f", кэш+CSV: {n_cleaned_total} файлов " + (f"было бы удалено" if dry_run else "удалено") if clean else ""))
+    # 2026-10-03: revert_mods.bat БЕЗ флагов уже уносит AI-RUS-оверлеи
+    # (реестр + каталоги → контейнер; обратимо). Только для «успешных»
+    # откатанных модов (ok + skip=уже оригинал) — ERR-моды не трогаем:
+    # там EN не восстановлен, оверлей ещё нужен как перевод.
+    if (ok + skip):
+        done_names = set()
+        # пересобираем имена по тем модам, где status ok/skip
+        # (у нас в цикле ниже нет per-mod статуса — повторный проход по mods)
+        for m in mods:
+            tgt = m.get("modfile")
+            if not tgt:
+                continue
+            bak = find_backup(tgt)
+            if not bak:
+                continue
+            if _md5(tgt) == _md5(bak):  # уже EN (откатили либо был оригиналом)
+                nm = m.get("name") or os.path.basename(tgt)
+                if nm.lower().endswith(".mod"):
+                    nm = nm[:-4]
+                done_names.add(nm)
+        if done_names:
+            print(f"\nОверлеи (AI-RUS / RUS) {len(done_names)} откатанного мода(ов):")
+            n_drop, n_moved = unhook_overlays_for(sorted(done_names), dry_run=dry_run)
+            if n_drop or n_moved:
+                print(f"  оверлей: {n_drop} строки registry + {n_moved} каталог(а)"
+                      + (" (dry-run — ничего не удалено)" if dry_run else " (реестр/каталог отключён, обратимо)"))
+            else:
+                print("  оверлеев не найдено — пропускаю")
     if fail:
         return 1
     return 0

@@ -6,6 +6,9 @@ rem  usage:
 rem    revert_mods.bat --list                         what can be reverted + orphan summary
 rem    revert_mods.bat --dry-run <mod>                show, do not touch
 rem    revert_mods.bat <mod> | id | name ...          revert specific mod(s)
+rem                                               + 2026-10-03: UNHOOK their AI-RUS
+rem                                                 overlays (registry + dirs ->
+rem                                                 _kmt_revert_overlays_<ts>\\)
 rem    revert_mods.bat --list-file mods.txt           revert from a list file
 rem    revert_mods.bat                                all mods (asks y/N)
 rem    revert_mods.bat --file <path>                  revert any .mod (kenshi\data, kenshi\mods\...)
