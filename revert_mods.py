@@ -17,8 +17,10 @@
   • .translate.csv / .prev / state-кеш НЕ трогаем (для повторного перевода)
   • 2026-10-03: AI-RUS/RUS-оверлеи откатанного мода СНИМАЮТСЯ автоматически:
     строки «<имя> AI-RUS» из data\\__mods.list и data\\mods.cfg (бэкап
-    .revertover_<ts>.bak рядом) + каталог kenshi\\mods\\<имя> AI-RUS →
-    контейнер kenshi\\_kmt_revert_overlays_<ts>\\ (обратимо, НЕ удаление).
+    .revertover_<ts>.bak рядом — обратимо) + каталог kenshi\\mods\\<имя> AI-RUS
+    → УДАЛЯЕТСЯ НАВСЕГДА (без параметров; 2026-10-03 просьба: revert = чистка).
+    Перевод НЕ теряется: RU-кэш state\{h}_*_mapping.json остаётся,
+    оверлей восстанавливается `python overlay.py install "<имя>"`.
     Моды со статусом ERR (EN не восстановлен) — их оверлеи НЕ трогаем.
 
 Возврат: 0 = ок/пропуск, 1 = ошибка, 2 = арг.ошибка, 3 = нет мода/бэкапа.
@@ -169,7 +171,7 @@ def list_orphan_dir(mod):
     return files
 
 
-def unhook_overlays_for(mnames, dry_run=False):
+def unhook_overlays_for(mnames, dry_run=False, delete=True):
     """2026-10-03: revert_mods.bat БЕЗ флагов уже должно уносить AI-RUS-оверлеи.
 
     Для каждого откатанного мода:
@@ -177,9 +179,13 @@ def unhook_overlays_for(mnames, dry_run=False):
           kenshi\\mods\\<имя> AI-RUS\\ (каталог) и/или строки «<имя> AI-RUS(\\.mod)?»
           в data\\__mods.list и data\\mods.cfg;
       (b) строки registry → удалить (бэкап .revertover_<ts>.bak рядом, обратимо);
-      (c) каталог overlay — перенести в kenshi\\_kmt_revert_overlays_<ts>\\ (НЕ mdel,
-          обратимо — то же, что делает --full-clean в B.3).
+      (c) каталог overlay — УДАЛИТЬ НАВСЕГДА (rmtree) — 2026-10-03, по просьбе
+          пользователя: revert должен сразу чистить, без [MOVED] в контейнер
+          и без параметров. Перевод при этом НЕ теряется окончательно:
+          RU-кэш (state/{h}_mapping.json) остаётся — оверлей пересобирается
+          `python overlay.py install "<имя>"`; кэш можно починить/перевести заново.
 
+    delete=False (не используется в bat, только API) — старый режим «в контейнер».
     Ничего не трогает при dry_run. Возврат: 0 всегда (ошибки логируются, не критичны).
     """
     import kmt_paths as kp
@@ -229,15 +235,22 @@ def unhook_overlays_for(mnames, dry_run=False):
         print("  overlay-reg: " + os.path.basename(reg) +
               (f": {dropped} строк" if not dry_run else f" — {dropped} строк (dry-run)"))
 
-    # ---- (c) каталоги overlay → контейнер ----
+    # ---- (c) каталог overlay → УДАЛЕНИЕ (по умолчанию; --keep-mode — нет) ----
     n_moved = 0
     if os.path.isdir(MODS_DIR):
-        for d in sorted(os.listdir(MODS_DIR)):
+        targets = [d for d in sorted(os.listdir(MODS_DIR))
+                   if os.path.isdir(os.path.join(MODS_DIR, d)) and _norm(d) in overlay_names]
+        if not targets:
+            return n_drop, 0
+        for d in targets:
             dp = os.path.join(MODS_DIR, d)
-            if not (os.path.isdir(dp) and _norm(d) in overlay_names):
-                continue
             if dry_run:
-                print(f"  overlay: {d} → {os.path.basename(container)} (dry-run)")
+                print(f"  overlay: {d} → {'УДАЛЕНИЕ НАВСЕГДА' if delete else os.path.basename(container)} (dry-run)")
+                continue
+            if delete:
+                shutil.rmtree(dp, ignore_errors=True)
+                print(f"  [DEL] overlay: {d} — удалён (RU-кэш в state/ не тронут: "
+                      f"overlay.py install вернёт перевод)")
             else:
                 os.makedirs(container, exist_ok=True)
                 dst = os.path.join(container, d)
@@ -738,8 +751,8 @@ def main():
             print(f"\nОверлеи (AI-RUS / RUS) {len(done_names)} откатанного мода(ов):")
             n_drop, n_moved = unhook_overlays_for(sorted(done_names), dry_run=dry_run)
             if n_drop or n_moved:
-                print(f"  оверлей: {n_drop} строки registry + {n_moved} каталог(а)"
-                      + (" (dry-run — ничего не удалено)" if dry_run else " (реестр/каталог отключён, обратимо)"))
+                print(f"  оверлей: {n_drop} строки registry (бэкап рядом) + {n_moved} каталог(а) удалён(и)"
+                      + (" (dry-run — ничего не изменено)" if dry_run else ""))
             else:
                 print("  оверлеев не найдено — пропускаю")
     if fail:
