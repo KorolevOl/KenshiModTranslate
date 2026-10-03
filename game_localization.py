@@ -188,30 +188,53 @@ def is_vanilla_owner(key):
         return False
     return _stem_owner(owner) in _VANILLA_OWNERS
 
+# ---- Structural (identifier) fields — NEVER translate ----
+# These fields are used by the engine as KEYS (file refs, grouping values),
+# not as display text. Translating them breaks:
+#   • race name  → engine looks up editor_data_{name}.xml → file not found
+#   • building category → BUILD menu groups by value → split into 2 sections
+_STRUCTURAL_FIELDS = frozenset({
+    "category", "building category", "base_name",
+})
+
+def field_suffix_of_key(key):
+    """Field suffix from key: record17946-stick_people.mod_name → 'name'.
+    Returns None if no field (bare record key or non-record key).
+    """
+    if not key or '-' not in key:
+        return None
+    _, owner_field = key.lower().split('-', 1)
+    for ext in ('.mod', '.base'):
+        if owner_field.endswith(ext):
+            return None  # no field, only owner
+        idx = owner_field.find(ext)
+        if idx >= 0:
+            after = owner_field[idx + len(ext):]
+            stripped = after.lstrip('_')
+            return stripped or None
+    return None
+
 def should_translate(entry_or_key, ignore_mod_description=True):
     """Единый предикат: «переводить ли ЭТУ строку мод-переводчиком».
 
-    False (НЕ переводить — игра сама или настройка):
-      • ванильная запись (gamedata/dialogue/newwworld/rebirth) И она есть
-        в #: ссылки .po целевого языка → игра переведёт сама;
+    False (НЕ переводить):
+      • structural field (category, base_name) → engine uses as key;
+      • запись в .po (id-owner в refs) → игра локализирует сама;
       • строка = описание САМОГО МОДА и включён ignore_mod_description.
-    True — остальное:
-      • запись НЕ в .po → переводить (нет локализации);
-      • запись В .po, но owner — НЕванильный (workshop-мод) → это override,
-        мод грузится ПОСЛЕ локали → .po-локаль НЕ применяется к override;
-        нужно перевести явным, RU можно взять из .po через prefill.
-    Аргумент entry_or_key принимает dict entry ({'key':...}) или строку key.
+    True (ПЕРЕВОДИТЬ):
+      • запись НЕ в .po → нет локализации → нужен оверлей.
     """
     if ignore_mod_description and is_mod_description(entry_or_key):
         return False
-    if not game_localizes(entry_or_key):
-        return True  # .po не знает эту запись → нужно перевести явным
-    # .po знает запись — но переводить ли?
+    # 1) Structural field → never translate (engine identifier, not text)
     key = entry_or_key if not isinstance(entry_or_key, dict) else (entry_or_key.get("key") or "")
-    if is_vanilla_owner(key):
-        return False  # ванильная, .po знает → игра переведёт сама
-    # Неванильный owner (workshop-мод) → override: мод грузится позже .po,
-    # его запись затирает .po-локаль → переводить явным из .po через prefill
+    suffix = field_suffix_of_key(key)
+    if suffix in _STRUCTURAL_FIELDS:
+        return False
+    # 2) .po knows this record → game localizes it → don't override
+    if game_localizes(entry_or_key):
+        return False
+    # 3) .po doesn't know → translate (mod's own content)
     return True
 
 
