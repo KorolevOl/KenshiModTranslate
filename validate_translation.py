@@ -98,7 +98,57 @@ def is_identifier(s):
             caps = sum(1 for ch in tok if ch.isupper())
             if caps >= 2 and re.match(r"^[A-Za-z0-9'$]+$", tok):
                 return True
+        # 2026-10-03: Внутренние КЛЮЧИ мода (один токен, без пробелов) —
+        #   (a) ВСЁ-КАПС служебные ключи: LOVER, RPFADERED, SOMETHINGTOEAT,
+        #       DAMNVERB, LOON — внутренние имена записей/триггеров мода;
+        #   (b) camelCase-связки (>=2 заглавные внутри, >=8 символов):
+        #       BanditcaptiverecruitDust, BerserkerCageRecruit, ZBDCRecruits,
+        #       RecruitShreikPC, FOGrecruitPC, Holy(recruitmod)assultmain.
+        # Перевод этих строк ЛОМАЕТ внутренние ссылки мода (триггеры диалогов,
+        # ссылки записи на запись) — LLM ЭХО-ит/возвращает пусто (ПРАВОМЕРНО:
+        # живой A/B-тест 2026-10-03: 'BanditcaptiverecruitDust' -> эхо,
+        # 'Screamer' -> 'Крикун'). Помечаем 'identifier': не шлём в LLM, не
+        # чиним фиксером, не считаем «непереведёнными» (чёткая граница: одно
+        # заглавное слово-набор 'Blackdragon' / 'Screamer' — ИМЯ, переводим).
+        if tok.isupper() and tok.isalpha() and 4 <= len(tok) <= 24:
+            return True
+        if re.fullmatch(r"[A-Za-z0-9()]{8,30}", tok) and \
+           sum(1 for ch in tok if ch.isupper()) >= 2 and \
+           any(ch.islower() for ch in tok):
+            return True
         return False
+    # 2026-10-03: МУЛЬТИ-ТОКЕНОВЫЕ служебные строки — ЧИСТЫЕ движковые теги,
+    # без единого «живого» слова (>=3 букв). Пример: '/CAI WARNINGSNEAK/.' —
+    # после вычистки /.../ и пунктуации остаётся только одинокая буква. LLM на
+    # таких строках ЭХО-ит/пусто (PРАВОМЕРНО — вставки движка, не текст).
+    #
+    # ФИЛОСОФИЯ КОНСЕРВАТИЗМА (важно!): Никогда не помечаем ЖИВОЙ текст как
+    # служебный — если сомниваемся, строка уйдёт в LLM, а LLM ПРАВОМЕРНО
+    # вернёт пустое (см. A/B 10.10: 'BanditcaptiverecruitDust' -> эхо).
+    # Это безопаснее, чем ложно-положительный пропуск (имя «Screamer»
+    # навсегда останется без перевода). Правила:
+    #   - soul (строка без тегов/пунктуации) не содержит живых слов >=3 букв,
+    #     ИЛИ
+    #   - строка КРАТКА (<=3 слова) И все слова ВСЁ-КАПС (LOVER, RPFADERED).
+    # Живая речь ('Until we meet again', 'Kill the dragon') содержит строчные
+    # слова >=3 — не попадает.
+    soul = re.sub(r"/[^/\n]{1,40}/", " ", s)
+    soul = re.sub(r"[^\w\u0400-\u04FF]+", " ", soul)
+    words = [w for w in soul.split() if any(c.isalpha() for c in w)]
+    if not any(len(w) >= 3 for w in words):
+        # «I'll» после вычистки пунктуации распадается на 'I'+'ll' — оба ≤2
+        # буквы, и строка ложно-попадала бы сюда. АПЕСТРОФ = настоящее
+        # английское сокращение = ЖИВОЙ текст → НЕ служебное.
+        if re.search(r"['’]", s):
+            return False
+        return True          # только теги/пунктуация/одинокие буквы
+    if len(words) <= 3 and all(w.isupper() for w in words):
+        return True          # короткие ВСЁ-КАПС-ключи (LOVER RPFADERED)
+    # NB (2026-10-03): формула «все слова ≤2 буквы или КАПС, ≤4 слова» УДАЛЕНА —
+    # она ложно-отсечала ЖИВЫЕ реплики ('I'll /SLITYOURTHROAT/ ...'). Безопаснее:
+    # пара-тройка настоящих служебных '/AAH/! /YOURNAME/ the /TEMPTRESS/!' останутся
+    # «непереведёнными» в счётчике, но живое ИМЯ («Screamer», «Kill the dragon»)
+    # гарантированно не отсечётся — строчное слово >=3 исключает обе формулы выше.
     # 4) имя меша/пропса: underscore + цифра в составе (до 6 токенов)
     if len(t) <= 6 and any("_" in tok for tok in t) and any(any(c.isdigit() for c in tok) for tok in t):
         return True
