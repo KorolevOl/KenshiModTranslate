@@ -215,8 +215,9 @@ def prune_ignored_rows(entries, done_map):
     removed = 0
     for e in entries:
         i = str(e.get("i"))
-        ignore = (glz.game_localizes(e)
-                  or (IGNORE_MOD_DESC and glz.is_mod_description(e)))
+        # 2026-10-03: через should_translate — override (не-ванильный owner в .po)
+        # НЕ попадает в GAME_SKIP, т.к. мод грузится после локали.
+        ignore = not glz.should_translate(e, ignore_mod_description=IGNORE_MOD_DESC)
         if not ignore:
             continue
         GAME_SKIP.add(i)
@@ -636,7 +637,9 @@ def translate_entries(entries, done_map, name, ctx, todo_scope=None):
     _skipped_n = 0
     for e in entries:
         i = str(e.get("i"))
-        if glz.game_localizes(e) or (IGNORE_MOD_DESC and glz.is_mod_description(e)):
+        # 2026-10-03: через should_translate — override (не-ванильный owner в .po)
+        # НЕ попадает в GAME_SKIP: мод грузится после локали → .po не применится.
+        if not glz.should_translate(e, ignore_mod_description=IGNORE_MOD_DESC):
             if i not in GAME_SKIP:
                 GAME_SKIP.add(i)
                 _skipped_n += 1
@@ -707,7 +710,9 @@ def translate_entries(entries, done_map, name, ctx, todo_scope=None):
                 # если игра локализует саму запись (её (id,owner) ∈ .po) или
                 # это описание мода — строка не нужна (не в кэш/CSV/оверлей).
                 # Старый game_po_has(en) был ТЕКСТОВЫМ и лжесрабатывал.
-                if glz.game_localizes(e) or (IGNORE_MOD_DESC and glz.is_mod_description(e)):
+                # 2026-10-03: через should_translate — override (не-ванильный owner
+                # в .po) НЕ попадает в GAME_SKIP: мод грузится после локали.
+                if not glz.should_translate(e, ignore_mod_description=IGNORE_MOD_DESC):
                     GAME_SKIP.add(str(e["i"]))
                 continue
             keep.append(e)
@@ -1236,7 +1241,8 @@ def translate_one(m, index, total_mods, ctx, drop_ids=None, todo_scope=None):
                 # dict-канон имеет приоритет над эхо/старым значением
                 if ru and str(ru).strip() and str(ru).strip().lower() != en.strip().lower():
                     done[i] = str(ru)
-                    if glz.game_localizes(e) or (IGNORE_MOD_DESC and glz.is_mod_description(e)):
+                    # 2026-10-03: через should_translate (override-строки НЕ игнорируются)
+                    if not glz.should_translate(e, ignore_mod_description=IGNORE_MOD_DESC):
                         GAME_SKIP.add(i)
                     reused += 1
             if reused:

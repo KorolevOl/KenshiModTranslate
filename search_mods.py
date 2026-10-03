@@ -52,15 +52,18 @@ _IGNORE_MOD_DESC = bool(CFG.get("translate", {}).get("ignore_mod_description", T
 
 def _glz_flag(key):
     """2026-09-24: метка для таблицы search_mods:
+
     • 'ИГРА' — запись локализует сама игра (её (objectID, owner) ∈ #: .po);
     • 'ОПИС' — описание самого МОДА (ignore_mod_description, default ON).
     Пустая строка, если строка НАДО переводить (своя).
+    2026-10-03: через should_translate — override (не-ванильный owner в .po)
+    НЕ помечается «ИГРА» (мод грузится после локали, оверлей должен покрыть).
     """
     if not key:
         return ""
     # игровое: только у записей с record-ID (описания не имеют record)
     try:
-        if glz.game_localizes(key):
+        if not glz.should_translate({"key": key}, ignore_mod_description=False):
             return "ИГРА"
     except Exception:
         pass

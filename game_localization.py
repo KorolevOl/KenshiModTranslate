@@ -172,18 +172,47 @@ def is_mod_description(entry_or_key):
     return key.lower() == "description"
 
 
+_VANILLA_OWNERS = frozenset({"gamedata", "dialogue", "newwworld", "rebirth"})
+
+def _stem_owner(owner):
+    o = (owner or "").lower()
+    for ext in (".mod", ".base"):
+        if o.endswith(ext):
+            return o[: -len(ext)]
+    return o
+
+def is_vanilla_owner(key):
+    """True, если запись принадлежит ванильному мод-модулю игры (data/*.mod/.base)."""
+    _, owner = record_ref_of_key(key)
+    if not owner:
+        return False
+    return _stem_owner(owner) in _VANILLA_OWNERS
+
 def should_translate(entry_or_key, ignore_mod_description=True):
-    """ЕДИНЫЙ предикат: «переводить ли ЭТУ строку мод-переводчиком».
+    """Единый предикат: «переводить ли ЭТУ строку мод-переводчиком».
 
     False (НЕ переводить — игра сама или настройка):
-      • запись локализует сама игра (её object-ID ∈ #: ссылки .po ЦЕЛЕВОГО языка);
+      • ванильная запись (gamedata/dialogue/newwworld/rebirth) И она есть
+        в #: ссылки .po целевого языка → игра переведёт сама;
       • строка = описание САМОГО МОДА и включён ignore_mod_description.
-    True — остальное (игровой текст из чужих/своих ID, записи мода и т.д.).
+    True — остальное:
+      • запись НЕ в .po → переводить (нет локализации);
+      • запись В .po, но owner — НЕванильный (workshop-мод) → это override,
+        мод грузится ПОСЛЕ локали → .po-локаль НЕ применяется к override;
+        нужно перевести явным, RU можно взять из .po через prefill.
     Аргумент entry_or_key принимает dict entry ({'key':...}) или строку key.
     """
     if ignore_mod_description and is_mod_description(entry_or_key):
         return False
-    return not game_localizes(entry_or_key)
+    if not game_localizes(entry_or_key):
+        return True  # .po не знает эту запись → нужно перевести явным
+    # .po знает запись — но переводить ли?
+    key = entry_or_key if not isinstance(entry_or_key, dict) else (entry_or_key.get("key") or "")
+    if is_vanilla_owner(key):
+        return False  # ванильная, .po знает → игра переведёт сама
+    # Неванильный owner (workshop-мод) → override: мод грузится позже .po,
+    # его запись затирает .po-локаль → переводить явным из .po через prefill
+    return True
 
 
 if __name__ == "__main__":
