@@ -18,6 +18,7 @@ import glob
 import hashlib
 import json
 import os
+import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -58,6 +59,40 @@ def _fingerprint(mods, state_dir):
     return "|".join(parts) + "#" + ("%.3f" % max(ts) if ts else "0")
 
 
+def _mod_iter(mods, title):
+    """Прогресс-бар по модам для фазы подсчёта (interactive-меню translate_mods.bat).
+
+    Без TTY (пиайп/CI/автозапуск) — молчит и просто перебирает mods, чтобы
+    логи не засорялись барами. tqdm опционален: его нет — тоже просто цикл.
+    Постфикс показывает ТЕКУЩИЙ мод — видно, что программа жива, а не зависла.
+    """
+    n = len(mods)
+    try:
+        from tqdm import tqdm
+    except ImportError:
+        tqdm = None
+    tty = sys.stderr.isatty()
+    if tqdm is None or not tty:
+        for m in mods:
+            yield m
+        return
+    bar = tqdm(mods, total=n, desc=title[:24], unit=" мод",
+               mininterval=0.3, file=sys.stderr,
+               bar_format='{desc} {bar}| {n_fmt}/{total_fmt} {unit} [{elapsed}]')
+    try:
+        for m in bar:
+            try:
+                bar.set_postfix_str(((m.get("name") or "?")[:24]))
+            except Exception:
+                pass
+            yield m
+    finally:
+        try:
+            bar.close()
+        except Exception:
+            pass
+
+
 def untranslated_stats(mods, state_dir, verbose=None):
     """Для списка модов вернуть [(мод, total, untranslated), ...].
 
@@ -88,7 +123,9 @@ def untranslated_stats(mods, state_dir, verbose=None):
     gpo = prefilter.game_po_map()  # memoized: {en_lower: ru} из .po игры
     log = verbose or (lambda *_a: None)
     out = []
-    for m in mods:
+    # 2026-10-03: живой прогресс-бар по модам (был: тишина «может занять минуту»,
+    # выглядело как зависание). Без TTY — обычный цикл, логи чистые.
+    for m in _mod_iter(mods, "подсчёт непереведённых"):
         mf = m.get("modfile")
         total = untr = 0
         if not (mf and os.path.exists(mf)):
